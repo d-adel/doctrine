@@ -1,0 +1,14 @@
+{
+  "name": "doctrine",
+  "description": "The doctrine plugin",
+  "owner": {
+    "name": "d-adel"
+  },
+  "plugins": [
+    {
+      "name": "doctrine",
+      "source": "./",
+      "description": "Goal-driven agent orchestration for a project that keeps its specifics in doctrine/profile.md"
+    }
+  ]
+}

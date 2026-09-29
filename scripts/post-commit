@@ -1,0 +1,8 @@
+#!/usr/bin/bash
+root=$(git rev-parse --show-toplevel)
+[ -f "$root/scripts/projects.txt" ] || exit 0
+claude plugin marketplace update doctrine > /dev/null 2>&1
+while IFS= read -r project; do
+  [ -z "$project" ] && continue
+  ( cd "$project" && claude plugin update doctrine@doctrine --scope project 2>&1 | tail -1 )
+done < "$root/scripts/projects.txt"

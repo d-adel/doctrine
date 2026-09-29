@@ -1,0 +1,63 @@
+{
+  "version": 2,
+  "model": "jev-latest",
+  "judgments": {
+    "J1": {
+      "name": "lineage",
+      "primitive": "choice",
+      "dimensions": ["layer", "regime", "invariant"],
+      "instructions": "The state describes one defect found in a software project. Which {dimension} from the options does this defect belong to? Choose none when the defect concerns no listed {dimension}, and new-key when it clearly concerns a {dimension} that is not listed.",
+      "extra": {
+        "none": "the defect concerns no listed {dimension}",
+        "new-key": "the defect clearly concerns a {dimension} that is not listed"
+      },
+      "threshold": 0.85,
+      "escalate": ["new-key"]
+    },
+    "J2": {
+      "name": "foundational",
+      "primitive": "noul",
+      "instructions": "The state holds one finding, the rows it names, and the results resting on the same code or on it. The finding shows that a reference, an oracle, a comparison arm, or an assumption that those other results depend on is wrong in the regime where they use it.",
+      "criteria": {
+        "true": "the finding shows a reference, oracle or premise other results depend on is wrong in the regime they use it in",
+        "false": "the finding is a defect or measurement that does not undercut what other results depend on"
+      },
+      "labels": {"true": "foundational", "false": "not-foundational"},
+      "threshold": 0.8,
+      "escalate": ["foundational"]
+    },
+    "J7": {
+      "name": "trigger form",
+      "primitive": "choice",
+      "instructions": "The state is the reopen trigger of a parked issue. What kind of trigger is it?",
+      "criteria": {
+        "regime-observable": "a measurable quantity of the operating regime crossing a stated threshold, with where it is observed",
+        "downstream-symptom": "a later failure or symptom appearing elsewhere, not a quantity of the regime itself",
+        "not-objective": "no observable or no threshold that someone other than its author could check"
+      },
+      "threshold": 0.8,
+      "escalate": ["not-objective"]
+    },
+    "J10": {
+      "name": "park watch",
+      "primitive": "noul",
+      "instructions": "Does the result in `result` report on {observable}? A report can be a measurement, a count, or an observation, including that it did not happen.",
+      "criteria": {
+        "true": "`result` states something about {observable}",
+        "false": "`result` states nothing about {observable}"
+      },
+      "labels": {"true": "relevant", "false": "unrelated"},
+      "threshold": 0.8,
+      "escalate": ["relevant"]
+    },
+    "J11": {
+      "name": "duplicate",
+      "primitive": "choice",
+      "instructions": "The state holds one new finding (`finding`) and earlier records. Which earlier record already describes the same defect, or the same idea already tested and rejected, so that the new finding adds nothing new? Choose none when no earlier record does; a related record with a different mechanism or a different setting is not the same.",
+      "extra": {"none": "no earlier record describes the same defect or the same rejected idea"},
+      "candidates": 40,
+      "threshold": 0.85,
+      "escalate_unless": ["none"]
+    }
+  }
+}
