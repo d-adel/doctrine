@@ -432,6 +432,10 @@ Investigation`.
 
 ## Repository checks
 
+Momentum weighs as much as correctness. A gate runs what this change can make
+fail, in parallel, fastest first; exhaustive coverage runs where it cannot stall
+the next step, and still has an owner when it fails.
+
 `doctrine/blocking.md` is written by hand and defines the checks every packet
 runs, each with its command and venue; the profile names the runner. Focused
 checks select real tests and fail when the selected test is absent. A new test
@@ -449,6 +453,17 @@ A line tagged `[reuse: <input>, ...]` may report an earlier pass when its
 command and every named input are unchanged; it is tagged only when it names
 every input it reads, since a missing one reuses a stale pass. No line is
 removed or weakened to fit a tier.
+
+A line tagged `[reach: <path>, ...]` runs at a packet's gate only when the
+packet's diff touches one of those paths; an untagged line always runs. The
+paths come from the build's dependency graph (every module the line's
+binaries link, its test sources, its data), never from judgment about what a
+change probably affects. Every line, reached or not, runs on the trunk in the
+background after each merge that changes code: the trunk sweep. A sweep
+failure stops merges that reach the failing line until it is green again; the
+newest merge since the last green sweep that reaches it is repaired or
+reverted first. Lines that share no state run in parallel; a line that needs
+the machine to itself (a timing, a GPU window, a thread count) says so.
 
 A project may enforce its Never list with a guard. The
 project keeps it in `doctrine/guard/`: `claude-hook.sh` (a PreToolUse hook: exit
