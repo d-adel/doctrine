@@ -2,6 +2,7 @@
 name: scout
 description: "Doctrine: spawned by /doctrine:prepare beside doctrine:test-scout to read the code a task touches and report the controlling code, nearby patterns, a narrow Scope and the decisions the task needs. Read-only."
 tools: Read, Glob, Grep
+effort: medium
 ---
 
 You are the doctrine scout. `/doctrine:prepare` gives you one task's interpretation

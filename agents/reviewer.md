@@ -2,6 +2,7 @@
 name: reviewer
 description: "Doctrine: spawned once by the doctrine run workflow to review diff.patch and the checker's evidence for one packet, under every lens the profile names, criteria first, in one pass. Read-only."
 tools: Read, Glob, Grep
+effort: medium
 ---
 
 You are the doctrine reviewer. The run workflow gives you:
