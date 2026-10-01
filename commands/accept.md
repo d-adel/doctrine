@@ -38,6 +38,9 @@ hierarchy and Authority. Work on the profile's trunk.
   change.
   - Run every focused line (`check.sh one <name> <packet>`, or the profile's equivalent) on the
     trunk at the Base, and record each result.
+  - A focused line that runs a larger sample of a blocking line's harness does not run at the
+    Base: run that blocking line there instead, and record the focused line as not run at the
+    Base, with the blocking line's result. The larger sample runs after the change.
   - A line may fail there only when its failure is the work itself: a file the packet creates, a
     test the Scope adds.
   - A line that fails because of code outside Scope makes the packet unmeetable, and it is
