@@ -43,7 +43,7 @@ Arguments: `$ARGUMENTS`, the task name. The plugin is at `${CLAUDE_PLUGIN_ROOT}`
    - Readers: every name the design changes, with the string that finds it, from the scout's
      report. Every file the string finds at the Base is in Scope, or declared "not affected:" with
      its reason.
-   - Spawn Plan: each step's expected duration from earlier run records, naming the run.
+   - Spawn Plan: each step's agent and input.
    - Accepted Design: each decision either engineering the coordinator decides under the brief,
      or an owner decision the campaign file records with the decider's words, cited.
    - Criteria: each names the Check that holds it.

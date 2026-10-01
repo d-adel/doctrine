@@ -4,7 +4,7 @@ How a run is carried out. What to work on, when to stop and when to park is
 `DESIGN.md` (Goal hierarchy, Task size, Progression, Lanes, Strategic mode).
 These rules govern Packet-size and Decision-size work; a Direct task runs in
 the coordinator's own session with only the rules its steps touch. Numbers the
-project sets (concurrency, lane durations, build kit, pitfalls) are in its
+project sets (concurrency, build kit, pitfalls) are in its
 `doctrine/profile.md`.
 
 ## Rules
@@ -54,19 +54,14 @@ project sets (concurrency, lane durations, build kit, pitfalls) are in its
   methods, their assumptions and evidence, and what stays open; literature is
   not authority, and a rediscovered technique is integrated and compared, not
   re-researched. Ordinary bugs need no survey.
-- **Durations.** A heavy lane has the profile's worst case; work that cannot
-  fit is split into lanes before launch. Every agent prompt states an expected
-  range from comparable past runs (the Workflow run records hold each agent's
-  `durationMs`), naming the run it came from, or says there is none. Past the
-  range an agent continues only while it adds evidence toward the verdict. The
-  coordinator checks the newest logs at the range's end and on every
-  completion notice, and stops or narrows a run whose deciding evidence
-  already exists or that has stopped producing any.
-- **Machine time.** Before an expensive run, estimate it from the nearest measured run (size,
-  cost per step, steps); run the smallest slice first (one body, a few steps); wrap every run in
-  a timeout of about twice its estimate; make its progress lines flush, so a killed run still
-  shows how far it got; check it once at the estimate and kill a run that is silent or far
-  behind; skip a level that cannot change the verdict.
+- **Stopping runs.** No time estimates: no expected durations, ranges, time
+  boxes or estimate-based timeouts in prompts, packets or reports. An agent
+  continues only while it adds evidence toward the verdict. The coordinator
+  checks the newest logs on every completion notice, and stops or narrows a
+  run whose deciding evidence already exists or that has stopped producing any.
+- **Machine time.** Run the smallest slice first (one body, a few steps); make
+  progress lines flush, so a killed run still shows how far it got; kill a run
+  that has gone silent; skip a level that cannot change the verdict.
 - **Never wait in the foreground.** Long commands and workflows run in the
   background; a foreground sleep or blocking watch loop is never how a wait
   happens.
@@ -104,15 +99,14 @@ block (build kit, code rules, pitfalls).
 
 For every agent that builds or runs:
 
-> Expected: about N-M minutes, from RUN (or: no comparable run; estimate). Read
-> the clock (`date`) at each stage. Run first the check most likely to decide
+> Run first the check most likely to decide
 > this task: C. Stop as soon as every criterion has its evidence or one
 > decisively fails; do no diagnostics or extra measurements beyond the
 > criteria, the listed measurements and that decision; mark anything not run.
 > A crossing inside a threshold's tolerance region is reported with the
 > region, not treated as a defect. Do not open a new question, probe or
-> packet: report what you found and stop. Past the expected range, continue
-> only while your steps still add evidence toward the verdict.
+> packet: report what you found and stop. Continue only while your steps
+> still add evidence toward the verdict.
 >
 > Run every measurement with the profile's invariant monitors on, and report
 > every violation line as a finding, whatever this task is for.
@@ -125,7 +119,7 @@ For every agent that builds or runs:
 
 For every critic and reviewer:
 
-> About 10 minutes, read-only. Recompute the result yourself and apply the
+> Read-only. Recompute the result yourself and apply the
 > registered outcome or the packet's criteria, reading a marginal crossing
 > against the measurement's tolerance region. Then apply the progression gate
 > (`DESIGN.md`): does this block the current milestone? Say whether the result

@@ -90,12 +90,12 @@ The accept trigger runs `git grep -l -F` for each string at the packet's trunk B
 
 ## Spawn Plan
 
-| Step | Agent | Input | Expected duration |
-|---|---|---|---|
-| 1 | `doctrine:implementer` | this packet, the worktree path | <n-m min, from wf_<id>> |
-| 2 | `doctrine:checker` | the worktree path, the log directory, Base | <n-m min> |
-| 3 | repair, at most one | the checker's failures in Scope | <n-m min> |
-| 4 | `doctrine:reviewer`, one per review mode the profile names | `diff.patch`, the checker's evidence | <n-m min> |
+| Step | Agent | Input |
+|---|---|---|
+| 1 | `doctrine:implementer` | this packet, the worktree path |
+| 2 | `doctrine:checker` | the worktree path, the log directory, Base |
+| 3 | repair, at most one | the checker's failures in Scope |
+| 4 | `doctrine:reviewer`, one per review mode the profile names | `diff.patch`, the checker's evidence |
 
 ## Checks
 

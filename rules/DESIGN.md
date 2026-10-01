@@ -8,7 +8,7 @@ the agents and the workflows. Each project holds its state and its specifics:
 
 - `doctrine/profile.md`: the owner, who decides, the branches, how to build
   and check, the review lenses, the Never list, the conventions every role
-  reads, durations and concurrency (`templates/profile.md`).
+  reads, and concurrency (`templates/profile.md`).
 - `doctrine/campaign.md`: the goal hierarchy and the campaign's Authority.
 - `doctrine/ledger.md`: current decision-relevant state.
 - `doctrine/blocking.md`: the checks every packet runs.

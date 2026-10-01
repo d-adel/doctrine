@@ -21,7 +21,7 @@ or a packet rests on.
    of established methods, their assumptions and evidence, and what stays open.
 3. **Lanes.** Two to five, each a different way into the question. Each is `{key, prompt}`; its
    prompt names the part of the question it answers, the primary sources to start from (found by
-   searching), the figures wanted with units, and its expected duration.
+   searching) and the figures wanted with units.
 4. **Launch.** Call the Workflow tool with name `doctrine:research-lanes` and args `{question,
    lanes, topic, root: <absolute checkout path>, plugin: "${CLAUDE_PLUGIN_ROOT}"}`. It returns
    `{lanes, critic}`.

@@ -85,7 +85,6 @@ switched on and what a violation prints. Every campaign measurement runs with ev
 ## Limits
 
 - Build-heavy runs at once: <n>
-- Heavy lane worst case: <minutes>
 - Quiet timings: <build and machine state a performance number comes from>
 
 ## Prompt block
