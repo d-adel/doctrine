@@ -167,7 +167,7 @@ def make_handler(lab):
 
         def do_GET(self):
             allowed, parts, query = self._route()
-            if not allowed:
+            if not allowed and not (parts == [] and lab.config.get("public_dashboard")):
                 return self._send(401, {"error": "token"})
             try:
                 return self._get(parts, query)

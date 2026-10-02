@@ -41,6 +41,18 @@ class Api(unittest.TestCase):
             urllib.request.urlopen(self.lab.url + "/api/jobs")
         self.assertEqual(caught.exception.code, 401)
 
+    def test_the_dashboard_needs_the_token_unless_it_is_public(self):
+        with self.assertRaises(urllib.error.HTTPError) as caught:
+            urllib.request.urlopen(self.lab.url + "/")
+        self.assertEqual(caught.exception.code, 401)
+        self.lab.lab.config["public_dashboard"] = True
+        page = urllib.request.urlopen(self.lab.url + "/").read().decode()
+        self.assertIn("Machines", page)
+        self.assertNotIn("<button>", page)
+        with self.assertRaises(urllib.error.HTTPError) as caught:
+            urllib.request.urlopen(self.lab.url + "/api/jobs")
+        self.assertEqual(caught.exception.code, 401)
+
     def test_submit_claim_log_finish_round_trip(self):
         [job_id] = self.client.submit("say", self.repo.head, {"word": "there"}, "gate")
         job = self.client.claim("desktop", ["os=windows"])
