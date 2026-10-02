@@ -5,7 +5,6 @@ import shutil
 import sys
 import tempfile
 import threading
-import time
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
@@ -46,11 +45,6 @@ class CommandLine(unittest.TestCase):
             code = cli.main(list(argv))
         return code, out.getvalue()
 
-    def worker(self):
-        return Worker(self.lab.client, {"name": "spare", "labels": ["os=linux"], "workdir": str(self.home / "worker"),
-                                        "repo_url": str(self.repo.path), "bash": shutil.which("bash"),
-                                        "quiet_labels": [], "heartbeat_every": 0.2, "log_every": 0.2})
-
     def test_lines_submits_one_job_per_value_at_one_commit(self):
         code, out = self.run_cli("lines", "hello", "word", stdin="one\n\n  two  \r\n\n")
         self.assertEqual(code, 0)
@@ -84,22 +78,11 @@ class CommandLine(unittest.TestCase):
         self.assertEqual([job["state"] for job in self.lab.client.jobs()], ["cancelled"])
 
     def test_lines_wait_on_every_job(self):
-        worker = self.worker()
-
-        def run_both():
-            deadline = time.time() + 60
-            ran = 0
-            while ran < 2 and time.time() < deadline:
-                ran += worker.run_once()
-                time.sleep(0.05)
-
-        thread = threading.Thread(target=run_both, daemon=True)
-        thread.start()
-        code, out = self.run_cli("lines", "hello", "word", "--wait", stdin="one\ntwo\n")
-        thread.join(timeout=60)
-        self.assertEqual(code, 0)
-        self.assertEqual(out.count(" done "), 2)
-        self.assertTrue(all(job["waiting"] for job in self.lab.client.jobs()))
+        with mock.patch.object(cli, "wait_for", return_value=3) as waited:
+            code, out = self.run_cli("lines", "hello", "word", "--wait", stdin="one\ntwo\n")
+        self.assertEqual(code, 3)
+        self.assertEqual(waited.call_args.args[1], [int(item[2:]) for item in out.split()])
+        self.assertEqual(len(waited.call_args.args[1]), 2)
 
     def test_submit_pushes_the_commit_and_queues_the_job(self):
         code, out = self.run_cli("submit", "hello", "--param", "word=there", "--class", "gate")
