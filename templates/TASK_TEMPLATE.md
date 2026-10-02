@@ -20,6 +20,13 @@ Interpretation: `doctrine/interpretations/<task>.md`.
 <The milestone or bottleneck from the campaign's goal hierarchy this packet moves, and by how
 much. A packet that moves neither is parked.>
 
+Predicts: <a term of the model's Goal table>: <its value now> -> <its value after this packet>
+
+## Route
+
+<The row of the model's Routes table this packet builds on. Its status is not falsified and its
+bound at the milestone's scale is known.>
+
 ## Size
 
 <Packet | Decision>, and why it is not Direct.
