@@ -147,15 +147,10 @@ class Presence:
         if self.cursor is None:
             return True
         where = self.cursor()
-        if where is None:
+        before, self.where = self.where, where
+        if where is None or before is None:
             return False
-        if self.where is None:
-            self.where = where
-            return False
-        if max(abs(where[0] - self.where[0]), abs(where[1] - self.where[1])) < self.travel:
-            return False
-        self.where = where
-        return True
+        return max(abs(where[0] - before[0]), abs(where[1] - before[1])) >= self.travel
 
     def sample(self):
         now = self.clock()
