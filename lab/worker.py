@@ -25,7 +25,8 @@ class Worker:
         self.env_file = config.get("env_file", "")
         self.owner = config.get("owner", False)
         self.presence = host.Presence(config.get("presence_minutes", 3), config.get("presence_window", 300),
-                                      cursor=host.cursor_position if config.get("presence_cursor") else None)
+                                      cursor=host.cursor_position if config.get("presence_cursor") else None,
+                                      travel=config.get("presence_cursor_pixels", 16))
         self.quiet_labels = set(config.get("quiet_labels", ["quiet", "reference"]))
         self.quiet_cpu = config.get("quiet_cpu", 15)
         self.quiet_gpu = config.get("quiet_gpu", 10)

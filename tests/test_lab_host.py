@@ -88,7 +88,7 @@ class Desk:
         return host.Presence(minutes, window, self.since_input, self.fullscreen, self.clock,
                              self.cursor if cursor else None)
 
-    def sample(self, presence, start, stop, every=10.0, typing=False, moving=False):
+    def sample(self, presence, start, stop, every=10.0, typing=False, moving=0):
         seen = []
         moment = start
         while moment < stop:
@@ -96,7 +96,7 @@ class Desk:
             if typing:
                 self.last = moment
             if moving:
-                self.where = (self.where[0] + 1, self.where[1])
+                self.where = (self.where[0] + moving, self.where[1])
             seen.append(presence.present())
             moment += every
         return seen
@@ -145,9 +145,14 @@ class Presence(unittest.TestCase):
     def test_with_the_cursor_rule_input_that_moves_the_cursor_is_presence(self):
         desk = Desk()
         presence = desk.presence(cursor=True)
-        seen = desk.sample(presence, 0.0, 600.0, typing=True, moving=True)
+        seen = desk.sample(presence, 0.0, 600.0, typing=True, moving=40)
         self.assertFalse(seen[0])
         self.assertTrue(seen[-1])
+
+    def test_with_the_cursor_rule_a_cursor_that_jitters_a_pixel_is_not_presence(self):
+        desk = Desk()
+        presence = desk.presence(cursor=True)
+        self.assertNotIn(True, desk.sample(presence, 0.0, 600.0, typing=True, moving=1))
 
     def test_with_the_cursor_rule_a_fullscreen_app_is_presence(self):
         desk = Desk()

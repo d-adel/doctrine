@@ -131,13 +131,15 @@ def _no_fullscreen():
 
 
 class Presence:
-    def __init__(self, minutes=3, window=300, since_input=None, fullscreen=None, clock=time.time, cursor=None):
+    def __init__(self, minutes=3, window=300, since_input=None, fullscreen=None, clock=time.time, cursor=None,
+                 travel=16):
         self.minutes = minutes
         self.window = window
         self.since_input = since_input or (seconds_since_input if WINDOWS else _no_input)
         self.fullscreen = fullscreen or (fullscreen_app if WINDOWS else _no_fullscreen)
         self.clock = clock
         self.cursor = cursor
+        self.travel = travel
         self.where = None
         self.inputs = {}
 
@@ -145,9 +147,15 @@ class Presence:
         if self.cursor is None:
             return True
         where = self.cursor()
-        moved = where is not None and self.where is not None and where != self.where
+        if where is None:
+            return False
+        if self.where is None:
+            self.where = where
+            return False
+        if max(abs(where[0] - self.where[0]), abs(where[1] - self.where[1])) < self.travel:
+            return False
         self.where = where
-        return moved
+        return True
 
     def sample(self):
         now = self.clock()
