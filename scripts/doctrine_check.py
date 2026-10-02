@@ -952,6 +952,22 @@ def route_obligations(ctx, task, decision):
     return sorted(set(items))
 
 
+def unpushed_trunk(root):
+    rule = profile_line(root, "Push")
+    if not rule or re.match(r"(none|no|never)\b", rule, re.IGNORECASE) or not re.search(r"\bpush\b", rule, re.IGNORECASE):
+        return None
+    quoted = re.search(r"`([^`]+)`", profile_line(root, "Trunk") or "")
+    trunk = quoted.group(1) if quoted else "main"
+    remote = "origin"
+    result = subprocess.run(
+        ["git", "-C", str(root), "rev-list", "--count", f"{remote}/{trunk}..{trunk}"], capture_output=True, text=True
+    )
+    if result.returncode != 0:
+        return None
+    ahead = int(result.stdout.strip() or 0)
+    return (trunk, remote, ahead, rule) if ahead else None
+
+
 def route_state(root, ctx, task_name):
     digest = hashlib.sha256()
     paths = [ctx["ledger_path"], root / "doctrine" / "profile.md"]
@@ -981,6 +997,12 @@ def evaluate_route(root, ctx, settings, decision, action, task, cause, base, hea
     if budget and budget["unchanged"]:
         findings.warn("reset-unchanged", f"{decision}: {', '.join(budget['unchanged'])} records a reset with no changed=, so it clears nothing")
     obligations = route_obligations(ctx, task, decision)
+    owed = unpushed_trunk(root)
+    if owed:
+        trunk, remote, ahead, rule = owed
+        plural = "" if ahead == 1 else "s"
+        findings.warn("unpushed", f"{trunk} is {ahead} commit{plural} ahead of {remote}/{trunk}; the profile says: {rule}")
+        obligations.append(f"push {trunk} to {remote} ({ahead} ahead)")
     if budget and budget["failed"] >= settings["resets"] and action != "complete":
         route = "reset"
         check_decisions(findings, ctx, settings, {decision})

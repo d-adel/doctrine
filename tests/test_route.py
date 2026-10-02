@@ -371,5 +371,43 @@ class RouteTests(unittest.TestCase):
         self.assertNotIn("reset-due", out)
 
 
+PROFILE_PUSH = PROFILE_SERVICE + "- Trunk: `main`\n- Push: commit and push `main` to origin when it makes sense\n"
+
+
+class UnpushedTrunk(unittest.TestCase):
+    def setUp(self):
+        self.repo = Repo(PROFILE_PUSH)
+        self.addCleanup(self.repo.close)
+        self.repo.git("branch", "-M", "main")
+        self.remote = Path(tempfile.mkdtemp(prefix="doctrine-remote-"))
+        self.addCleanup(shutil.rmtree, self.remote, True)
+        subprocess.run(["git", "init", "-q", "--bare", str(self.remote)], check=True, capture_output=True, env=ENV)
+        self.repo.git("remote", "add", "origin", str(self.remote))
+        self.repo.git("push", "-q", "origin", "main")
+
+    def commit(self):
+        self.repo.write("notes.md", "a record\n")
+        self.repo.git("add", "-A")
+        self.repo.git("commit", "-q", "-m", "record")
+
+    def test_a_pushed_trunk_owes_nothing(self):
+        _, out = self.repo.route("--action", "complete")
+        self.assertNotIn("unpushed", out)
+        self.assertEqual(route_of(out), "fast", out)
+
+    def test_an_unpushed_trunk_warns_and_keeps_completion_open(self):
+        self.commit()
+        _, out = self.repo.route("--action", "complete")
+        self.assertIn("WARN unpushed: main is 1 commit ahead of origin/main", out)
+        self.assertIn("OPEN push main to origin (1 ahead)", out)
+        self.assertEqual(route_of(out), "doctrine", out)
+
+    def test_a_profile_that_does_not_push_owes_nothing(self):
+        self.repo.write("doctrine/profile.md", PROFILE_SERVICE + "- Trunk: `main`\n- Push: none\n")
+        self.commit()
+        _, out = self.repo.route("--action", "complete")
+        self.assertNotIn("unpushed", out)
+
+
 if __name__ == "__main__":
     unittest.main()
