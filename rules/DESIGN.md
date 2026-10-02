@@ -70,6 +70,9 @@ Rules, each checked by `doctrine_check.py` (Triggers):
   The scoreboard after the merge is its verdict; a miss updates the model like any result.
 - **The plan is never empty.** When Next is empty, producing it from the model is the next
   action, before any other work. Idle machines with only filler queued are the same signal.
+- **Discovery, not a smaller target.** When the measured routes are falsified, Next is research
+  for a new one: prior art, a candidate route with its bound, the cheapest falsifier. Shrinking the
+  milestone is never a Next item and never offered as an option; only the owner opens the target.
 - **Pace is a requirement.** A loop that waits on slow checks, repeats runs on unchanged inputs
   or measures stand-ins instead of the Goal is a defect in the process, repaired like one.
 
