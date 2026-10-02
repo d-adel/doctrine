@@ -42,7 +42,7 @@ def parse_nvidia(text):
 
 def _nvidia(query):
     try:
-        return subprocess.run(["nvidia-smi", f"--query-gpu={query}", "--format=csv,noheader,nounits"],
+        return hidden_run(["nvidia-smi", f"--query-gpu={query}", "--format=csv,noheader,nounits"],
                               capture_output=True, text=True, timeout=10).stdout
     except (OSError, subprocess.TimeoutExpired):
         return ""
@@ -197,10 +197,22 @@ def _each_windows_process(root, call):
             kernel32.CloseHandle(ctypes.c_void_p(handle))
 
 
+NO_WINDOW = 0x08000000
+NEW_GROUP = 0x00000200
+
+
+def hidden():
+    return {"creationflags": NO_WINDOW} if WINDOWS else {}
+
+
+def hidden_run(args, **kwargs):
+    return subprocess.run(args, **hidden(), **kwargs)
+
+
 def start(args, cwd, env):
     if WINDOWS:
         return subprocess.Popen(args, cwd=cwd, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                creationflags=subprocess.CREATE_NEW_PROCESS_GROUP)
+                                creationflags=NEW_GROUP | NO_WINDOW)
     return subprocess.Popen(args, cwd=cwd, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                             start_new_session=True)
 
@@ -221,6 +233,6 @@ def resume(process):
 
 def kill(process):
     if WINDOWS:
-        subprocess.run(["taskkill", "/T", "/F", "/PID", str(process.pid)], capture_output=True)
+        hidden_run(["taskkill", "/T", "/F", "/PID", str(process.pid)], capture_output=True)
     else:
         os.killpg(os.getpgid(process.pid), signal.SIGKILL)

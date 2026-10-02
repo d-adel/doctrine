@@ -30,6 +30,21 @@ class Probes(unittest.TestCase):
         processes = [(10, 1, 100), (11, 10, 150), (20, 10, 50), (21, 20, 60)]
         self.assertEqual(sorted(host.descendants(processes, 10)), [10, 11])
 
+    def test_windows_subprocesses_open_no_window(self):
+        seen = []
+        real_popen, real_run, real_windows = host.subprocess.Popen, host.subprocess.run, host.WINDOWS
+        host.subprocess.Popen = lambda *args, **kwargs: seen.append(kwargs)
+        host.subprocess.run = lambda *args, **kwargs: seen.append(kwargs)
+        try:
+            host.WINDOWS = True
+            host.start(["bash", "-c", "true"], ".", {})
+            host.hidden_run(["git", "status"])
+        finally:
+            host.subprocess.Popen, host.subprocess.run, host.WINDOWS = real_popen, real_run, real_windows
+        self.assertEqual(len(seen), 2)
+        for kwargs in seen:
+            self.assertTrue(kwargs.get("creationflags", 0) & 0x08000000)
+
     def test_cpu_load_is_a_percentage(self):
         load = host.cpu_load(0.2)
         self.assertGreaterEqual(load, 0.0)

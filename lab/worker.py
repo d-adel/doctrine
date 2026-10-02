@@ -48,10 +48,10 @@ class Worker:
     def checkout(self, sha):
         if not (self.tree / ".git").exists():
             self.workdir.mkdir(parents=True, exist_ok=True)
-            subprocess.run(["git", "clone", "--quiet", "--no-checkout", self.repo_url, str(self.tree)], check=True)
-        subprocess.run(["git", "-C", str(self.tree), "fetch", "--quiet", "origin", sha], check=True)
-        subprocess.run(["git", "-C", str(self.tree), "checkout", "--quiet", "--force", sha], check=True)
-        subprocess.run(["git", "-C", str(self.tree), "clean", "-ffdxq", "-e", "build-dev", "-e", "build-release"],
+            host.hidden_run(["git", "clone", "--quiet", "--no-checkout", self.repo_url, str(self.tree)], check=True)
+        host.hidden_run(["git", "-C", str(self.tree), "fetch", "--quiet", "origin", sha], check=True)
+        host.hidden_run(["git", "-C", str(self.tree), "checkout", "--quiet", "--force", sha], check=True)
+        host.hidden_run(["git", "-C", str(self.tree), "clean", "-ffdxq", "-e", "build-dev", "-e", "build-release"],
                        check=True)
 
     def machine(self):
