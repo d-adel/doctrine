@@ -46,25 +46,24 @@ def render(lab, token):
     finished_rows = [[f"L-{job['id']}", escape(job["recipe"]), escape(str(job["params"])),
                       f"<span class='{escape(job['state'])}'>{escape(job['state'])}</span>",
                       escape(str(job["result"].get("metrics", {}))), escape(job["worker"])] for job in finished]
-    sweeps = []
-    idle = lab.config.get("idle")
-    if idle:
-        try:
-            head = lab.resolve(f"refs/heads/{idle['ref']}")
-        except Exception:
-            head = ""
-        for label in idle["recipe_for_label"]:
-            states = {}
-            for job in store.jobs(for_ref=f"sweep:{label}:{head}", limit=1000) if head else []:
-                states[job["state"]] = states.get(job["state"], 0) + 1
-            summary = ", ".join(f"{count} {state}" for state, count in sorted(states.items())) or "not swept"
-            sweeps.append([escape(label), head[:8], escape(summary)])
+    rules = []
+    for rule in lab.config.get("idle", []):
+        name = lab.rule_name(rule)
+        mark = store.idle_mark(name)
+        head = mark["head"] if mark else ""
+        states = {}
+        for job in store.jobs(for_ref=f"idle:{name}:{head}", limit=1000) if head else []:
+            states[job["state"]] = states.get(job["state"], 0) + 1
+        summary = ", ".join(f"{count} {state}" for state, count in sorted(states.items()))
+        rules.append([escape(rule["label"]), escape(rule["recipe"]), escape(rule["ref"]), escape(rule["when"]),
+                      escape(head[:8]), _ago(mark["ran"]) if mark else "never",
+                      escape(summary or ("records only" if mark else "never ran"))])
     return (
         "<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width'>"
         "<meta http-equiv='refresh' content='10'><title>Talus lab</title>"
         f"<style>{STYLE}</style></head><body>"
         "<h2>Machines</h2>" + _table(["machine", "labels", "seen", "running", ""], workers)
-        + "<h2>Main swept</h2>" + _table(["platform", "main", "jobs"], sweeps)
+        + "<h2>Idle rules</h2>" + _table(["label", "recipe", "ref", "when", "head", "ran", "jobs"], rules)
         + "<h2>Queue</h2>" + _table(["job", "class", "recipe", "params", "commit", "waited", "overtaken"], queued_rows)
         + "<h2>Recent</h2>" + _table(["job", "recipe", "params", "state", "metrics", "machine"], finished_rows)
         + "</body></html>"

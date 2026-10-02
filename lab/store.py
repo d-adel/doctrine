@@ -35,6 +35,11 @@ CREATE TABLE IF NOT EXISTS workers (
     seen REAL NOT NULL,
     paused INTEGER NOT NULL DEFAULT 0
 );
+CREATE TABLE IF NOT EXISTS idle_marks (
+    rule TEXT PRIMARY KEY,
+    head TEXT NOT NULL,
+    ran REAL NOT NULL
+);
 """
 
 
@@ -52,6 +57,11 @@ def _job(row):
 
 def _moment(now):
     return time.time() if now is None else now
+
+
+def _check_classes(entries):
+    if any(entry["cls"] not in policy.CLASSES for entry in entries):
+        raise ValueError("unknown class")
 
 
 class Store:
@@ -76,21 +86,54 @@ class Store:
             self._db.commit()
             return cursor.lastrowid
 
+    def _insert(self, entries, moment):
+        ids = []
+        for entry in entries:
+            cursor = self._db.execute(
+                "INSERT INTO jobs (recipe, params, commit_sha, needs, cls, short, for_ref, submitted)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (entry["recipe"], json.dumps(entry["params"], sort_keys=True), entry["commit"],
+                 json.dumps(sorted(entry["needs"])), entry["cls"], int(bool(entry["short"])),
+                 entry.get("for_ref", ""), moment),
+            )
+            ids.append(cursor.lastrowid)
+        return ids
+
     def submit_many(self, entries, now=None):
-        if any(entry["cls"] not in policy.CLASSES for entry in entries):
-            raise ValueError("unknown class")
+        _check_classes(entries)
         moment = _moment(now)
         with self._lock:
+            ids = self._insert(entries, moment)
+            self._db.commit()
+            return ids
+
+    def _idle_mark(self, rule):
+        row = self._db.execute("SELECT head, ran FROM idle_marks WHERE rule = ?", (rule,)).fetchone()
+        return dict(row) if row else None
+
+    def idle_mark(self, rule):
+        with self._lock:
+            return self._idle_mark(rule)
+
+    def _has_jobs(self, for_ref):
+        return self._db.execute("SELECT 1 FROM jobs WHERE for_ref = ? LIMIT 1", (for_ref,)).fetchone() is not None
+
+    def advance_idle(self, rule, seen, head, entries, now=None):
+        _check_classes(entries)
+        moment = _moment(now)
+        with self._lock:
+            if self._idle_mark(rule) != seen:
+                return []
+            ran = seen["ran"] if seen else 0.0
             ids = []
-            for entry in entries:
-                cursor = self._db.execute(
-                    "INSERT INTO jobs (recipe, params, commit_sha, needs, cls, short, for_ref, submitted)"
-                    " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                    (entry["recipe"], json.dumps(entry["params"], sort_keys=True), entry["commit"],
-                     json.dumps(sorted(entry["needs"])), entry["cls"], int(bool(entry["short"])),
-                     entry.get("for_ref", ""), moment),
-                )
-                ids.append(cursor.lastrowid)
+            if entries and not any(self._has_jobs(ref) for ref in {entry.get("for_ref", "") for entry in entries}):
+                ids = self._insert(entries, moment)
+                ran = moment
+            self._db.execute(
+                "INSERT INTO idle_marks (rule, head, ran) VALUES (?, ?, ?)"
+                " ON CONFLICT(rule) DO UPDATE SET head = excluded.head, ran = excluded.ran",
+                (rule, head, ran),
+            )
             self._db.commit()
             return ids
 
