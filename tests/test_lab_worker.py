@@ -93,6 +93,12 @@ class Runs(unittest.TestCase):
         self.assertTrue(self.worker("desktop", ["os=windows"]).run_once())
         self.assertEqual(self.client.job(job_id)["worker"], "desktop")
 
+    def test_a_job_needing_a_worker_name_goes_only_to_that_worker(self):
+        [job_id] = self.client.submit("brief", self.repo.head, {}, "gate", needs=["name=laptop"])
+        self.assertFalse(self.worker("desktop", ["os=windows"]).run_once())
+        self.assertTrue(self.worker("laptop", ["os=windows"]).run_once())
+        self.assertEqual(self.client.job(job_id)["worker"], "laptop")
+
     def test_cancel_kills_the_running_command(self):
         [job_id] = self.client.submit("slow", self.repo.head, {}, "gate")
         worker = self.worker("spare", ["os=linux"])
@@ -184,7 +190,7 @@ class Runs(unittest.TestCase):
 
     def test_quiet_labels_drop_under_load(self):
         worker = self.worker("desktop", ["os=windows", "reference"], quiet_labels=["reference"], quiet_cpu=-1)
-        self.assertEqual(worker.labels_now(), {"os=windows"})
+        self.assertEqual(worker.labels_now(), {"os=windows", "name=desktop"})
 
 
 if __name__ == "__main__":

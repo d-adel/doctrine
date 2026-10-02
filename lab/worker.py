@@ -16,7 +16,7 @@ class Worker:
     def __init__(self, client, config):
         self.client = client
         self.name = config["name"]
-        self.labels = set(config["labels"])
+        self.labels = set(config["labels"]) | {f"name={self.name}"}
         self.workdir = Path(config["workdir"])
         self.tree = self.workdir / "tree"
         self.logs = self.workdir / "logs"

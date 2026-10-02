@@ -100,7 +100,7 @@ def render(lab, token):
         button = (f"<form method='post' action='/api/workers/{escape(worker['name'])}/pause"
                   f"?token={escape(token)}&paused={0 if worker['paused'] else 1}'><button>{verb}</button></form>"
                   if token and getattr(lab, "token", token) == token else "")
-        workers.append([escape(worker["name"]), escape(" ".join(worker["labels"])),
+        workers.append([escape(worker["name"]), escape(" ".join(label for label in worker["labels"] if not label.startswith("name="))),
                         _ago(worker["seen"]) + (" (owner present)" if worker.get("held") else ""),
                         f"L-{job['id']} {escape(job['recipe'])} ({escape(job['cls'])})" if job else "", button])
     queue = sorted(store.jobs(state="queued", limit=500), key=lambda job: (-_rank(job), job["id"]))
