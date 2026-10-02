@@ -144,6 +144,13 @@ workload; diagnostic switches are allowed there, off by default. Packets
 package accepted work at merge time, one packet per merge unit, not one per
 discovery step.
 
+**Scale with speed.** A fix is decided by its focused tests and the workload at
+the size its slice names; the scale check is the largest instance of the
+milestone's workload that runs short at the current speed, sized from measured
+run times and grown as the system gets faster. The full-size workload is the
+milestone's own check, never part of a fix's slice or a decision's decisive
+experiment: a run that waits on the system's own slowness stalls every lane.
+
 **Routing.** At a decision boundary (before choosing consequential next work, after a result, and
 before declaring a question or task complete; not before every read, command or edit) the
 coordinator runs `scripts/doctrine_check.py route`. It separates two things: the permitted next
