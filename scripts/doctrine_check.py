@@ -573,6 +573,103 @@ def context(root):
     }
 
 
+def normal(text):
+    return re.sub(r"\s+", " ", text.strip().strip("`").strip().lower())
+
+
+def model_named(root):
+    return profile_line(root, "Model") is not None
+
+
+def parse_model(root):
+    path = profile_path(root, "Model", "doctrine/model.md")
+    if not path.exists():
+        return None
+    parts = sections(read_text(path))
+    routes = []
+    _, rows = table_under(parts.get("Routes", ""))
+    for cells in rows:
+        if len(cells) >= 3 and cells[0]:
+            routes.append({"name": cells[0], "bound": cells[1], "status": cells[2]})
+    _, goal_rows = table_under(parts.get("Goal", ""))
+    terms = [cells[0] for cells in goal_rows if cells and cells[0]]
+    items = [line.strip() for line in parts.get("Next", "").splitlines() if re.match(r"^\s*\d+\.\s", line)]
+    return {"path": path, "routes": routes, "terms": terms, "next": items}
+
+
+def find_route(model, name):
+    wanted = normal(name)
+    for route in model["routes"]:
+        if normal(route["name"]) == wanted:
+            return route
+    for route in model["routes"]:
+        if normal(route["name"]).startswith(wanted):
+            return route
+    return None
+
+
+def names_term(text, terms):
+    found = normal(text)
+    return any(normal(term) in found for term in terms)
+
+
+def check_route_and_prediction(findings, root, task):
+    if not model_named(root):
+        return
+    model = parse_model(root)
+    if model is None:
+        findings.block("model", "the profile names a Model file that does not exist")
+        return
+    lines = [line for line in task.parts.get("Route", "").splitlines() if line.strip()]
+    if not lines:
+        findings.block("route-none", "the packet names no Route: a row of the model's Routes table")
+    else:
+        route = find_route(model, lines[0])
+        if route is None:
+            findings.block("route-unknown", f"the Route '{lines[0].strip()}' is no row of the model's Routes table")
+        elif normal(route["status"]).startswith("falsified"):
+            findings.block("route-falsified", f"the route '{route['name']}' is falsified ({route['status']}): reset the route first")
+        elif not normal(route["bound"]) or normal(route["bound"]).startswith("unknown"):
+            findings.block("route-unbounded", f"the route '{route['name']}' has no bound at the milestone's scale: measure the bound before building on it")
+    prediction = re.search(r"Predicts:\s*(.+)$", task.moves, re.MULTILINE | re.IGNORECASE)
+    if not prediction:
+        findings.block("prediction-none", "Moves has no 'Predicts: <goal term>: <now> -> <after>' line")
+    elif not names_term(prediction.group(1), model["terms"]):
+        findings.block("prediction-term", "the prediction names no term of the model's Goal table")
+
+
+def model_problems(findings, root, model, base=None, head=None, staged=False):
+    ledger = profile_path(root, "Ledger", "doctrine/ledger.md")
+    if base or staged:
+        span = ["--cached"] if staged else [base, head or "HEAD"]
+        relative_ledger = ledger.relative_to(root).as_posix()
+        relative_model = model["path"].relative_to(root).as_posix()
+        added = [line for line in run_git(root, "diff", "-U0", *span, "--", relative_ledger).splitlines()
+                 if re.match(r"^\+\|\s*[ED]-\d+\s*\|", line)]
+        changed = run_git(root, "diff", "--name-only", *span).split()
+        if added and relative_model not in changed:
+            ids = ", ".join(re.match(r"^\+\|\s*([ED]-\d+)", line).group(1) for line in added)
+            findings.block("model-stale", f"{ids} entered the ledger without an update to {relative_model}: every result updates the model")
+    if not model["next"]:
+        findings.block("plan-empty", "the model's Next is empty: the next action comes from the model before any other work")
+    for item in model["next"]:
+        if not re.search(r"moves:", item, re.IGNORECASE):
+            findings.block("next-moves", f"Next item '{item[:60]}' names no goal term it moves ('moves: <term>')")
+
+
+def command_model(root, args):
+    findings = Findings()
+    model = parse_model(root)
+    if model is None:
+        if model_named(root):
+            findings.block("model", "the profile names a Model file that does not exist")
+        else:
+            findings.warn("model", "the profile names no Model file")
+        return findings.emit()
+    model_problems(findings, root, model, args.base, args.head, args.staged)
+    return findings.emit()
+
+
 def command_triggers(root, args):
     ctx = context(root)
     findings = Findings()
@@ -643,6 +740,7 @@ def command_accept(root, args):
     if task.supersedes and task.supersedes not in ctx["tasks"]:
         findings.warn("supersedes", f"Supersedes names {task.supersedes}, which has no packet")
     check_readers(findings, root, task)
+    check_route_and_prediction(findings, root, task)
     if ctx["lines"] is not None:
         events = lineage_events(rows, ctx["tasks"], ctx["kinds"])
         scope = set(task.lineage)
@@ -1112,6 +1210,10 @@ def main():
     merge.add_argument("--head", required=True)
     merge.add_argument("--apply", action="store_true")
     sub.add_parser("lineage")
+    model = sub.add_parser("model")
+    model.add_argument("--base")
+    model.add_argument("--head")
+    model.add_argument("--staged", action="store_true")
     cites = sub.add_parser("cites")
     cites.add_argument("file")
     route = sub.add_parser("route")
@@ -1133,6 +1235,7 @@ def main():
         "lineage": command_lineage,
         "cites": command_cites,
         "route": command_route,
+        "model": command_model,
     }
     sys.exit(handlers[args.command](root, args))
 

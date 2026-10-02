@@ -37,6 +37,38 @@ changes a major decision. Commit count, closed issues, experiments, ledger
 size, defects found and documentation are activity metrics, used only to
 diagnose the process.
 
+## The model
+
+The ledger is evidence; the model is what the campaign believes now, and every decision reads
+the model, not the ledger. The profile names it (`Model:`). It holds, in this order:
+
+1. **Goal**: one table, a row per term of the milestone: target, measured now, gap, source.
+2. **Scoreboard**: the run that measures every Goal term at once on the reference machine, and
+   where its history lives. It runs after every change to the trunk that touches code.
+3. **Cost model**: what each part of the target costs at the milestone's scale, measured.
+4. **Routes**: one table: each candidate route to the milestone, its bound at the milestone's
+   scale (arithmetic on measured costs), and its status (open, chosen, falsified with the
+   number that falsified it).
+5. **Beliefs**: established, falsified, and open; each open belief names the experiment that
+   settles it.
+6. **Next**: the actions, ranked by the gap they close times how cheaply they close it; each
+   names the Goal term it moves (`moves: <term>`).
+
+Rules, each checked by `doctrine_check.py` (Triggers):
+
+- **Every result updates the model.** A commit that adds an experiment or decision row to the
+  ledger changes the model in the same commit: the belief it tested, the cost it measured, the
+  route it bounded. A result that changes nothing says so in the model.
+- **Bound before build.** A packet names its Route. A route without a bound at the milestone's
+  scale gets its bound measured first, by the cheapest experiment that can produce it; a
+  falsified route takes no packet until a reset records a new route.
+- **Predict, then measure.** A packet's Moves carries `Predicts: <Goal term>: <now> -> <after>`.
+  The scoreboard after the merge is its verdict; a miss updates the model like any result.
+- **The plan is never empty.** When Next is empty, producing it from the model is the next
+  action, before any other work. Idle machines with only filler queued are the same signal.
+- **Pace is a requirement.** A loop that waits on slow checks, repeats runs on unchanged inputs
+  or measures stand-ins instead of the Goal is a defect in the process, repaired like one.
+
 ## Modes
 
 - Local mode solves or measures a well-defined problem inside the accepted
@@ -237,7 +269,8 @@ an action, provided it is recorded.
 | Fixed point | Runs | Blocks on |
 |---|---|---|
 | `/doctrine:milestone` (a milestone set or changed) | `milestone` | no Id or Regime; an unvalidated milestone oracle; no regime map; a park overlapping the regime |
-| `/doctrine:accept` | `accept <task>` | no lineage; a criterion without an oracle, or a reference not validated in the milestone's regimes; a relative comparison without `shares=` and `covered-by=`; an exclusion without `floor=`; a repair without its invariant criterion; a stale citation; an audit due in the packet's lineage; no Readers section, or a reader of a changed name outside Scope and not declared unaffected; for a packet moving the milestone, every milestone block; a reset due on a `decision:` key it names |
+| `/doctrine:accept` | `accept <task>` | no lineage; a criterion without an oracle, or a reference not validated in the milestone's regimes; a relative comparison without `shares=` and `covered-by=`; an exclusion without `floor=`; a repair without its invariant criterion; a stale citation; an audit due in the packet's lineage; no Readers section, or a reader of a changed name outside Scope and not declared unaffected; for a packet moving the milestone, every milestone block; a reset due on a `decision:` key it names; with a Model in the profile, no Route, a Route not in the model, a falsified route, a route without a bound, or no `Predicts:` naming a Goal term |
+| Every commit (the project's guard) | `model --staged` | a ledger result without a model update; an empty Next; a Next item naming no term it moves |
 | `/doctrine:prepare`, `/doctrine:run`, `/doctrine:decide` | `triggers [--task]` | an audit due in the lineage they touch; a reset due on a `decision:` key the packet names |
 | A decision boundary (Progression, Routing) | `route --action <mechanical, probe, repair, investigate, complete>` | an audit due in the decision's or packet's lineage; a spent probe budget; a question already answered; a reset due; a route applied after its state changed |
 | `/doctrine:merge`, after the gate | `merge --apply` | nothing: it marks stale every row resting on a changed path, and every row resting on those |
@@ -454,12 +487,16 @@ command and every named input are unchanged; it is tagged only when it names
 every input it reads, since a missing one reuses a stale pass. No line is
 removed or weakened to fit a tier.
 
-A line tagged `[reach: <path>, ...]` runs at a packet's gate only when the
-packet's diff touches one of those paths; an untagged line always runs. The
-paths come from the build's dependency graph (every module the line's
+A line runs at a packet's gate only when the packet's diff reaches it. Reach
+is computed from the build's dependency graph (every module the line's
 binaries link, its test sources, its data), never from judgment about what a
-change probably affects. Every line, reached or not, runs on the trunk in the
-background after each merge that changes code: the trunk sweep. A sweep
+change probably affects; a project whose runner cannot compute it tags lines
+`[reach: <path>, ...]` from that graph, and an untagged line always runs. A
+diff of records paths only reaches nothing. Every line, reached or not, runs
+on the trunk in the background at most once a day and only after a change that
+touches code: the trunk sweep. A line protects a route or a belief of the model
+(`[protects: <route or belief>]`); when that route is falsified the line leaves
+the gate with it, and returns only if the route does. A sweep
 failure stops merges that reach the failing line until it is green again; the
 newest merge since the last green sweep that reaches it is repaired or
 reverted first. Lines that share no state run in parallel; a line that needs
