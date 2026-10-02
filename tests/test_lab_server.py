@@ -1,3 +1,4 @@
+import json
 import sys
 import tempfile
 import threading
@@ -310,6 +311,49 @@ class RecipesFromAnotherRef(unittest.TestCase):
             self.assertEqual(job["command"], "echo probe")
         finally:
             lab.close()
+
+class RecipesOnAPacketBranch(unittest.TestCase):
+    def setUp(self):
+        self.repo = Repo(recipe_file(BOOK))
+        git("checkout", "--quiet", "-b", "packet", cwd=self.repo.work)
+        book = dict(BOOK)
+        book["fresh"] = {"params": {"word": "new"}, "run": "echo fresh {word}"}
+        (self.repo.work / "doctrine" / "lab" / "recipes.json").write_text(json.dumps({"recipes": book}))
+        git("add", "-A", cwd=self.repo.work)
+        git("commit", "--quiet", "-m", "packet", cwd=self.repo.work)
+        git("push", "--quiet", str(self.repo.path), "packet:packet", cwd=self.repo.work)
+        self.packet = git("rev-parse", "HEAD", cwd=self.repo.work)
+
+    def tearDown(self):
+        self.repo.close()
+
+    def test_a_recipe_only_on_the_job_commit_comes_from_that_commit(self):
+        lab = Coordinator(self.repo, recipes_ref="main")
+        try:
+            [job_id] = lab.client.submit("fresh", self.packet, {"word": "probe"}, "experiment")
+            job = lab.client.claim("spare", ["os=linux"])
+            self.assertEqual(job["id"], job_id)
+            self.assertEqual(job["command"], "echo fresh probe")
+        finally:
+            lab.close()
+
+    def test_a_recipe_on_the_ref_still_comes_from_the_ref(self):
+        lab = Coordinator(self.repo, recipes_ref="main")
+        try:
+            [job_id] = lab.client.submit("say", self.packet, {"word": "probe"}, "experiment")
+            job = lab.client.claim("spare", ["os=linux"])
+            self.assertEqual(job["command"], "echo probe")
+        finally:
+            lab.close()
+
+    def test_a_recipe_on_neither_is_refused(self):
+        lab = Coordinator(self.repo, recipes_ref="main")
+        try:
+            with self.assertRaises(urllib.error.HTTPError):
+                lab.client.submit("absent", self.packet, {}, "experiment")
+        finally:
+            lab.close()
+
 
 if __name__ == "__main__":
     unittest.main()

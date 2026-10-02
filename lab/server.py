@@ -45,16 +45,22 @@ class Lab:
     def resolve(self, commit):
         return self.git("rev-parse", "--verify", f"{commit}^{{commit}}").strip()
 
-    def book_at(self, sha):
+    def book_at(self, sha, name=None):
         ref = self.config.get("recipes_ref")
         source = f"refs/heads/{ref}" if ref else sha
-        return recipes.load(self.git("show", f"{source}:{self.config['recipes_path']}"))
+        book = recipes.load(self.git("show", f"{source}:{self.config['recipes_path']}"))
+        if name is not None and name not in book and ref:
+            try:
+                book = recipes.load(self.git("show", f"{sha}:{self.config['recipes_path']}"))
+            except (subprocess.CalledProcessError, ValueError):
+                pass
+        return book
 
     def entries(self, name, params, sha, cls, for_ref="", needs=()):
         for label in needs:
             if not LABEL.fullmatch(label):
                 raise ValueError(f"label {label!r} holds a character labels refuse")
-        book = self.book_at(sha)
+        book = self.book_at(sha, name)
         if name not in book:
             raise ValueError(f"no recipe {name} at {sha[:8]}")
         recipe = book[name]
@@ -125,7 +131,7 @@ class Lab:
             job = self.store.claim(worker, labels)
         if job is None:
             return None
-        job["command"] = recipes.command(self.book_at(job["commit_sha"])[job["recipe"]], job["params"])
+        job["command"] = recipes.command(self.book_at(job["commit_sha"], job["recipe"])[job["recipe"]], job["params"])
         return job
 
     def log_path(self, job_id):
@@ -143,7 +149,7 @@ class Lab:
             return False
         path = self.log_path(job_id)
         output = path.read_text(errors="replace") if path.exists() else ""
-        recipe = self.book_at(job["commit_sha"]).get(job["recipe"], {})
+        recipe = self.book_at(job["commit_sha"], job["recipe"]).get(job["recipe"], {})
         return self.store.finish(job_id, worker, exit_code, dict(result, metrics=recipes.metrics(recipe, output)))
 
 
