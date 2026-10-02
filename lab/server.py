@@ -43,7 +43,9 @@ class Lab:
         return self.git("rev-parse", "--verify", f"{commit}^{{commit}}").strip()
 
     def book_at(self, sha):
-        return recipes.load(self.git("show", f"{sha}:{self.config['recipes_path']}"))
+        ref = self.config.get("recipes_ref")
+        source = f"refs/heads/{ref}" if ref else sha
+        return recipes.load(self.git("show", f"{source}:{self.config['recipes_path']}"))
 
     def entries(self, name, params, sha, cls, for_ref=""):
         book = self.book_at(sha)

@@ -8,7 +8,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from labfixture import Coordinator, Repo, recipe_file
+from labfixture import Coordinator, Repo, git, recipe_file
 from lab import server
 
 BOOK = {
@@ -264,6 +264,40 @@ class Fanouts(unittest.TestCase):
         lines = ["- one :: true", "- it's bad :: true", "- two :: true", ""]
         self.assertEqual(self.submit_over(chr(10).join(lines)), [])
 
+
+
+class RecipesFromAnotherRef(unittest.TestCase):
+    def setUp(self):
+        self.repo = Repo(recipe_file(BOOK))
+        git("checkout", "--quiet", "-b", "experiment", cwd=self.repo.work)
+        (self.repo.work / "doctrine" / "lab" / "recipes.json").unlink()
+        (self.repo.work / "probe.txt").write_text("experiment branch" + chr(10))
+        git("add", "-A", cwd=self.repo.work)
+        git("commit", "--quiet", "-m", "experiment", cwd=self.repo.work)
+        git("push", "--quiet", str(self.repo.path), "experiment:experiment", cwd=self.repo.work)
+        self.experiment = git("rev-parse", "HEAD", cwd=self.repo.work)
+
+    def tearDown(self):
+        self.repo.close()
+
+    def test_a_commit_without_recipes_is_refused_by_default(self):
+        lab = Coordinator(self.repo)
+        try:
+            with self.assertRaises(urllib.error.HTTPError):
+                lab.client.submit("say", self.experiment, {}, "experiment")
+        finally:
+            lab.close()
+
+    def test_recipes_can_come_from_a_named_ref(self):
+        lab = Coordinator(self.repo, recipes_ref="main")
+        try:
+            [job_id] = lab.client.submit("say", self.experiment, {"word": "probe"}, "experiment")
+            job = lab.client.claim("spare", ["os=linux"])
+            self.assertEqual(job["id"], job_id)
+            self.assertEqual(job["commit_sha"], self.experiment)
+            self.assertEqual(job["command"], "echo probe")
+        finally:
+            lab.close()
 
 if __name__ == "__main__":
     unittest.main()
