@@ -593,7 +593,12 @@ def parse_model(root):
             routes.append({"name": cells[0], "bound": cells[1], "status": cells[2]})
     _, goal_rows = table_under(parts.get("Goal", ""))
     terms = [cells[0] for cells in goal_rows if cells and cells[0]]
-    items = [line.strip() for line in parts.get("Next", "").splitlines() if re.match(r"^\s*\d+\.\s", line)]
+    items = []
+    for line in parts.get("Next", "").splitlines():
+        if re.match(r"^\s*\d+\.\s", line):
+            items.append(line.strip())
+        elif items and line.strip() and line[:1].isspace():
+            items[-1] += " " + line.strip()
     return {"path": path, "routes": routes, "terms": terms, "next": items}
 
 

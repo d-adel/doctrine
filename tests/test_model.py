@@ -184,6 +184,12 @@ class ModelRules(unittest.TestCase):
         code, out = self.check("model")
         self.assertIn("BLOCK next-moves", out)
 
+    def test_a_next_item_may_name_its_term_on_a_continuation_line(self):
+        self.write("doctrine/model.md", MODEL.replace("1. The reset (moves: burst frames, p99).",
+                                                      "1. The reset, from the model" + chr(10) + "   (moves: burst frames, p99)."))
+        code, out = self.check("model")
+        self.assertEqual(code, 0, out)
+
     def test_a_project_without_a_model_line_is_not_checked(self):
         self.write("doctrine/profile.md", PROFILE.replace("- Model: `doctrine/model.md`\n", ""))
         self.packet(route="", predicts="It helps.")
