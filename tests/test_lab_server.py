@@ -1,4 +1,6 @@
 import sys
+import tempfile
+import threading
 import unittest
 import urllib.error
 import urllib.request
@@ -7,6 +9,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from labfixture import Coordinator, Repo, recipe_file
+from lab import server
 
 BOOK = {
     "say": {"short": True, "params": {"word": "hi"}, "run": "echo {word}", "metrics": {"answer": "answer ([0-9]+)"}},
@@ -14,8 +17,11 @@ BOOK = {
     "sweep-linux": {"needs": ["os=linux"], "fanout": {"file": "doctrine/blocking.md", "recipe": "check-line",
                                                       "param": "name", "needs": ["os=linux"],
                                                       "pattern": "^- (?P<value>[^\\[\\n]+?) :: "}},
+    "bench": {"needs": ["reference"], "run": "echo bench", "metrics": {"stepMsMean": "stepMsMean ([0-9.]+)"}},
 }
 BLOCKING = "- one :: true\n- two :: true\n"
+LINUX = {"label": "os=linux", "recipe": "sweep-linux", "ref": "main", "when": "code"}
+RECORDS = ["doctrine/**", "*.md"]
 
 
 class Api(unittest.TestCase):
@@ -23,7 +29,7 @@ class Api(unittest.TestCase):
         files = recipe_file(BOOK)
         files["doctrine/blocking.md"] = BLOCKING
         self.repo = Repo(files)
-        self.lab = Coordinator(self.repo, idle={"ref": "main", "recipe_for_label": {"os=linux": "sweep-linux"}})
+        self.lab = Coordinator(self.repo, idle=[LINUX], records=RECORDS)
         self.client = self.lab.client
 
     def tearDown(self):
@@ -67,7 +73,7 @@ class Api(unittest.TestCase):
         first = self.client.claim("spare", ["os=linux"])
         self.assertEqual(first["recipe"], "check-line")
         self.assertEqual(first["commit_sha"], self.repo.head)
-        self.assertEqual(first["for_ref"], f"sweep:os=linux:{self.repo.head}")
+        self.assertEqual(first["for_ref"], f"idle:os=linux:sweep-linux:main:code:{self.repo.head}")
         self.client.finish(first["id"], "spare", 0, {})
         second = self.client.claim("spare", ["os=linux"])
         self.client.finish(second["id"], "spare", 0, {})
@@ -100,6 +106,129 @@ class Api(unittest.TestCase):
         self.assertIn("desktop", page)
         self.assertIn("say", page)
         self.assertIn("gate", page)
+
+    def test_the_dashboard_shows_each_idle_rule(self):
+        self.client.claim("spare", ["os=linux"])
+        page = urllib.request.urlopen(f"{self.lab.url}/?token={self.lab.token}").read().decode()
+        self.assertIn("sweep-linux", page)
+        self.assertIn(self.repo.head[:8], page)
+        self.assertIn("1 queued, 1 running", page)
+
+
+class IdleRules(unittest.TestCase):
+    def start(self, rules):
+        files = recipe_file(BOOK)
+        files["doctrine/blocking.md"] = BLOCKING
+        files["src/a.cpp"] = "int a = 1;\n"
+        self.repo = Repo(files)
+        self.addCleanup(self.repo.close)
+        self.lab = Coordinator(self.repo, idle=rules, records=RECORDS)
+        self.addCleanup(self.lab.close)
+        self.moment = [1000.0]
+        self.lab.lab.clock = lambda: self.moment[0]
+        return self.lab.client
+
+    def drain(self, worker, labels):
+        claimed = []
+        job = self.lab.client.claim(worker, labels)
+        while job:
+            self.lab.client.finish(job["id"], worker, 0, {})
+            claimed.append(job)
+            job = self.lab.client.claim(worker, labels)
+        return claimed
+
+    def test_a_commit_touching_only_records_is_not_swept(self):
+        client = self.start([LINUX])
+        self.assertEqual(len(self.drain("spare", ["os=linux"])), 2)
+        self.repo.commit({"doctrine/notes/today.md": "x\n", "doctrine/a/b/c.txt": "y\n", "README.md": "z\n",
+                          "src/notes.md": "w\n"})
+        self.assertIsNone(client.claim("spare", ["os=linux"]))
+        self.assertEqual(len(client.jobs()), 2)
+        self.assertEqual(self.lab.lab.store.idle_mark(server.Lab.rule_name(LINUX))["head"], self.repo.head)
+
+    def test_code_after_a_records_only_head_is_swept(self):
+        client = self.start([LINUX])
+        self.drain("spare", ["os=linux"])
+        self.repo.commit({"doctrine/notes.md": "x\n"})
+        self.assertIsNone(client.claim("spare", ["os=linux"]))
+        self.repo.commit({"src/b.cpp": "int b;\n"})
+        self.assertEqual(client.claim("spare", ["os=linux"])["commit_sha"], self.repo.head)
+
+    def test_a_code_change_behind_a_records_commit_is_swept(self):
+        client = self.start([LINUX])
+        self.drain("spare", ["os=linux"])
+        self.repo.commit({"src/a.cpp": "int a = 2;\n"})
+        self.repo.commit({"doctrine/notes.md": "x\n"})
+        self.assertEqual(client.claim("spare", ["os=linux"])["commit_sha"], self.repo.head)
+
+    def test_a_file_renamed_into_records_counts_its_old_path(self):
+        client = self.start([LINUX])
+        self.drain("spare", ["os=linux"])
+        (self.repo.work / "src" / "a.cpp").unlink()
+        self.repo.commit({"doctrine/a.cpp": "int a = 1;\n"})
+        self.assertEqual(client.claim("spare", ["os=linux"])["commit_sha"], self.repo.head)
+
+    def test_a_daily_rule_runs_at_most_once_a_day(self):
+        client = self.start([dict(LINUX, when="daily")])
+        self.assertEqual(len(self.drain("spare", ["os=linux"])), 2)
+        self.repo.commit({"src/b.cpp": "int b;\n"})
+        self.moment[0] += 23 * 3600
+        self.assertIsNone(client.claim("spare", ["os=linux"]))
+        self.moment[0] += 3600 + 1
+        self.assertEqual({job["commit_sha"] for job in self.drain("spare", ["os=linux"])}, {self.repo.head})
+
+    def test_a_daily_rule_does_not_run_a_head_twice(self):
+        client = self.start([dict(LINUX, when="daily")])
+        self.drain("spare", ["os=linux"])
+        self.moment[0] += 3 * 86400
+        self.assertIsNone(client.claim("spare", ["os=linux"]))
+        self.assertEqual(len(client.jobs()), 2)
+
+    def test_the_first_rule_that_queues_wins(self):
+        bench = {"label": "reference", "recipe": "bench", "ref": "main", "when": "code"}
+        client = self.start([bench, dict(LINUX, when="daily")])
+        labels = ["os=linux", "reference"]
+        first = client.claim("desktop", labels)
+        self.assertEqual(first["recipe"], "bench")
+        self.assertEqual(len(client.jobs()), 1)
+        client.finish(first["id"], "desktop", 0, {})
+        self.assertEqual(client.claim("desktop", labels)["recipe"], "check-line")
+
+    def test_a_rule_passes_over_a_worker_without_its_label(self):
+        bench = {"label": "reference", "recipe": "bench", "ref": "main", "when": "code"}
+        client = self.start([bench, LINUX])
+        self.assertEqual(client.claim("spare", ["os=linux"])["recipe"], "check-line")
+        self.assertEqual({job["recipe"] for job in client.jobs()}, {"check-line"})
+
+    def test_a_rule_that_cannot_queue_falls_through_to_the_next(self):
+        missing = {"label": "os=linux", "recipe": "missing", "ref": "main", "when": "code"}
+        client = self.start([missing, LINUX])
+        self.assertEqual(client.claim("spare", ["os=linux"])["recipe"], "check-line")
+
+    def test_workers_claiming_at_once_queue_one_sweep(self):
+        client = self.start([LINUX])
+        barrier = threading.Barrier(8)
+
+        def claim(index):
+            barrier.wait()
+            client.claim(f"spare{index}", ["os=linux"])
+
+        threads = [threading.Thread(target=claim, args=(index,)) for index in range(8)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=60)
+        self.assertEqual(len(client.jobs()), 2)
+
+    def test_an_idle_config_that_is_not_a_list_of_rules_is_refused(self):
+        with tempfile.TemporaryDirectory() as folder:
+            config = {"db": str(Path(folder) / "lab.db"), "jobs_dir": str(Path(folder) / "jobs"), "repo": folder,
+                      "token": "t"}
+            for idle in ({"ref": "main", "recipe_for_label": {"os=linux": "sweep-linux"}},
+                         [dict(LINUX, when="weekly")],
+                         [{"label": "os=linux", "recipe": "sweep-linux", "when": "code"}]):
+                with self.assertRaises(ValueError):
+                    server.Lab(dict(config, idle=idle))
 
 
 class Fanouts(unittest.TestCase):

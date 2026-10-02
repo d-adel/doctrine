@@ -32,7 +32,7 @@ class Repo:
         for name, text in files.items():
             target = self.work / name
             target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(text, newline="\n")
+            target.write_bytes(text.encode())
         git("add", "-A", cwd=self.work)
         git("commit", "--quiet", "-m", "fixture", cwd=self.work)
         git("push", "--quiet", str(self.path), "main:main", cwd=self.work)

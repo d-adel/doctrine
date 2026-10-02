@@ -8,6 +8,7 @@ import threading
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -38,11 +39,50 @@ class CommandLine(unittest.TestCase):
         self.repo.close()
         shutil.rmtree(self.home, ignore_errors=True)
 
-    def run_cli(self, *argv):
+    def run_cli(self, *argv, stdin=""):
         out = io.StringIO()
-        with redirect_stdout(out):
+        with redirect_stdout(out), mock.patch("sys.stdin", io.StringIO(stdin)):
             code = cli.main(list(argv))
         return code, out.getvalue()
+
+    def test_lines_submits_one_job_per_value_at_one_commit(self):
+        code, out = self.run_cli("lines", "hello", "word", stdin="one\n\n  two  \r\n\n")
+        self.assertEqual(code, 0)
+        jobs = [self.lab.client.job(int(item[2:])) for item in out.split()]
+        self.assertEqual([job["params"] for job in jobs], [{"word": "one"}, {"word": "two"}])
+        head = git("rev-parse", "HEAD", cwd=self.clone)
+        self.assertEqual({job["commit_sha"] for job in jobs}, {head})
+        self.assertEqual({job["cls"] for job in jobs}, {"gate"})
+        self.assertEqual(git("--git-dir", str(self.repo.path), "rev-parse", f"refs/lab/{head}"), head)
+
+    def test_lines_takes_the_class_the_commit_and_the_for(self):
+        first = git("rev-parse", "HEAD", cwd=self.clone)
+        git("-c", "user.email=lab@example.invalid", "-c", "user.name=lab", "commit", "--quiet", "--allow-empty",
+            "-m", "later", cwd=self.clone)
+        code, out = self.run_cli("lines", "hello", "word", "--class", "experiment", "--commit", "HEAD~1",
+                                 "--for", "packet", stdin="one\n")
+        self.assertEqual(code, 0)
+        job = self.lab.client.job(int(out.strip()[2:]))
+        self.assertEqual((job["cls"], job["commit_sha"], job["for_ref"]), ("experiment", first, "packet"))
+
+    def test_lines_with_no_values_fails_and_queues_nothing(self):
+        code, out = self.run_cli("lines", "hello", "word", stdin="\n  \n")
+        self.assertEqual(code, 1)
+        self.assertIn("no values", out)
+        self.assertEqual(self.lab.client.jobs(), [])
+
+    def test_lines_with_a_refused_value_leaves_nothing_queued(self):
+        code, out = self.run_cli("lines", "hello", "word", stdin="one\nit's\ntwo\n")
+        self.assertEqual(code, 1)
+        self.assertIn("it's", out)
+        self.assertEqual([job["state"] for job in self.lab.client.jobs()], ["cancelled"])
+
+    def test_lines_wait_on_every_job(self):
+        with mock.patch.object(cli, "wait_for", return_value=3) as waited:
+            code, out = self.run_cli("lines", "hello", "word", "--wait", stdin="one\ntwo\n")
+        self.assertEqual(code, 3)
+        self.assertEqual(waited.call_args.args[1], [int(item[2:]) for item in out.split()])
+        self.assertEqual(len(waited.call_args.args[1]), 2)
 
     def test_submit_pushes_the_commit_and_queues_the_job(self):
         code, out = self.run_cli("submit", "hello", "--param", "word=there", "--class", "gate")

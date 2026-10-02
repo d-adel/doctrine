@@ -1,3 +1,4 @@
+import fnmatch
 import json
 import subprocess
 import threading
@@ -10,13 +11,29 @@ from . import dashboard, recipes
 from .store import Store
 
 
+WHEN = ("code", "daily")
+DAY = 86400.0
+
+
+def check_rules(rules):
+    if not isinstance(rules, list):
+        raise ValueError("idle is a list of rules")
+    for rule in rules:
+        fields = isinstance(rule, dict) and all(isinstance(rule.get(key), str) and rule[key]
+                                                for key in ("label", "recipe", "ref"))
+        if not fields or rule.get("when") not in WHEN:
+            raise ValueError(f"an idle rule needs a label, a recipe, a ref and a when of {WHEN}: {rule}")
+
+
 class Lab:
     def __init__(self, config):
+        check_rules(config.get("idle", []))
         self.config = config
         self.store = Store(config["db"])
         self.jobs_dir = Path(config["jobs_dir"])
         self.jobs_dir.mkdir(parents=True, exist_ok=True)
         self.token = config["token"]
+        self.clock = time.time
 
     def git(self, *args):
         return subprocess.run(["git", "--git-dir", self.config["repo"], *args],
@@ -28,17 +45,16 @@ class Lab:
     def book_at(self, sha):
         return recipes.load(self.git("show", f"{sha}:{self.config['recipes_path']}"))
 
-    def submit(self, name, params, commit, cls, for_ref=""):
-        sha = self.resolve(commit)
+    def entries(self, name, params, sha, cls, for_ref=""):
         book = self.book_at(sha)
         if name not in book:
             raise ValueError(f"no recipe {name} at {sha[:8]}")
         recipe = book[name]
-        if "fanout" not in recipe:
-            recipes.command(recipe, params)
-            return [self.store.submit(name, params, sha, recipe.get("needs", []), cls, recipe.get("short", False), for_ref)]
+        children = [{"recipe": name, "params": params, "needs": []}]
+        if "fanout" in recipe:
+            children = recipes.fanout(recipe, self.git("show", f"{sha}:{recipe['fanout']['file']}"))
         entries = []
-        for child in recipes.fanout(recipe, self.git("show", f"{sha}:{recipe['fanout']['file']}")):
+        for child in children:
             child_recipe = book[child["recipe"]]
             recipes.command(child_recipe, child["params"])
             entries.append({"recipe": child["recipe"], "params": child["params"], "commit": sha,
@@ -46,23 +62,49 @@ class Lab:
                             "cls": cls, "short": child_recipe.get("short", False), "for_ref": for_ref})
         if not entries:
             raise ValueError(f"recipe {name} fans out to no jobs at {sha[:8]}")
-        return self.store.submit_many(entries)
+        return entries
+
+    def submit(self, name, params, commit, cls, for_ref=""):
+        return self.store.submit_many(self.entries(name, params, self.resolve(commit), cls, for_ref))
+
+    @staticmethod
+    def rule_name(rule):
+        return ":".join(rule[key] for key in ("label", "recipe", "ref", "when"))
+
+    def records_only(self, old, new):
+        try:
+            changed = self.git("diff", "--name-only", "--no-renames", "-z", old, new)
+        except subprocess.CalledProcessError:
+            return False
+        globs = self.config.get("records", [])
+        return all(any(fnmatch.fnmatchcase(path, glob) for glob in globs) for path in changed.split(chr(0)) if path)
+
+    def idle_rule(self, rule):
+        name = self.rule_name(rule)
+        head = self.resolve(f"refs/heads/{rule['ref']}")
+        seen = self.store.idle_mark(name)
+        if seen and seen["head"] == head:
+            return False
+        if rule["when"] == "daily" and seen and self.clock() - seen["ran"] < DAY:
+            return False
+        if rule["when"] == "code" and seen and self.records_only(seen["head"], head):
+            self.store.advance_idle(name, seen, head, [], self.clock())
+            return False
+        entries = self.entries(rule["recipe"], {}, head, "sweep", f"idle:{name}:{head}")
+        return bool(self.store.advance_idle(name, seen, head, entries, self.clock()))
 
     def idle(self, worker, labels):
-        idle = self.config.get("idle")
-        if not idle or self.store.paused(worker):
+        rules = self.config.get("idle", [])
+        if not rules or self.store.paused(worker):
             return False
-        for label, sweep in idle["recipe_for_label"].items():
-            if label not in labels:
+        for rule in rules:
+            if rule["label"] not in labels:
                 continue
             try:
-                head = self.resolve(f"refs/heads/{idle['ref']}")
-                mark = f"sweep:{label}:{head}"
-                if self.store.jobs(for_ref=mark, limit=1):
-                    continue
-                return bool(self.submit(sweep, {}, head, "sweep", mark))
+                if self.idle_rule(rule):
+                    return True
             except (subprocess.CalledProcessError, ValueError, KeyError):
-                return False
+                continue
         return False
 
     def claim(self, worker, labels):

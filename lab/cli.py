@@ -4,6 +4,7 @@ import os
 import subprocess
 import sys
 import time
+import urllib.error
 from pathlib import Path
 
 from .client import Client
@@ -46,6 +47,33 @@ def wait_for(client, ids, poll=5):
     return 0 if all(job["state"] == "done" for job in jobs) else 1
 
 
+def push_commit(config, commit):
+    sha = subprocess.run(["git", "rev-parse", "--verify", f"{commit}^{{commit}}"],
+                         capture_output=True, text=True, check=True).stdout.strip()
+    subprocess.run(["git", "push", "--quiet", config["remote"], f"{sha}:refs/lab/{sha}"], check=True)
+    return sha
+
+
+def submit_lines(client, config, args):
+    values = [line.strip() for line in sys.stdin.read().splitlines() if line.strip()]
+    if not values:
+        print("lab lines: no values on stdin", flush=True)
+        return 1
+    sha = push_commit(config, args.commit)
+    ids = []
+    for value in values:
+        try:
+            ids += client.submit(args.recipe, sha, {args.param: value}, args.cls, args.for_ref)
+        except urllib.error.HTTPError as error:
+            for item in ids:
+                client.cancel(item)
+            reason = error.read().decode(errors="replace")
+            print(f"lab lines: {value} refused, nothing left queued: {reason}", flush=True)
+            return 1
+    print(" ".join(f"L-{item}" for item in ids), flush=True)
+    return wait_for(client, ids) if args.wait else 0
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="lab")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -53,11 +81,15 @@ def main(argv=None):
         commands.add_parser(name).add_argument("--config", required=True)
     submit = commands.add_parser("submit")
     submit.add_argument("recipe")
-    submit.add_argument("--commit", default="HEAD")
     submit.add_argument("--param", action="append", default=[])
-    submit.add_argument("--class", dest="cls", default="experiment")
-    submit.add_argument("--for", dest="for_ref", default="")
-    submit.add_argument("--wait", action="store_true")
+    lines = commands.add_parser("lines")
+    lines.add_argument("recipe")
+    lines.add_argument("param")
+    for command, cls in ((submit, "experiment"), (lines, "gate")):
+        command.add_argument("--commit", default="HEAD")
+        command.add_argument("--class", dest="cls", default=cls)
+        command.add_argument("--for", dest="for_ref", default="")
+        command.add_argument("--wait", action="store_true")
     commands.add_parser("push").add_argument("ref")
     commands.add_parser("status")
     commands.add_parser("wait").add_argument("ids", nargs="+")
@@ -84,13 +116,13 @@ def main(argv=None):
     config = client_config()
     client = Client(config["url"], config["token"])
     if args.command == "submit":
-        sha = subprocess.run(["git", "rev-parse", "--verify", f"{args.commit}^{{commit}}"],
-                             capture_output=True, text=True, check=True).stdout.strip()
-        subprocess.run(["git", "push", "--quiet", config["remote"], f"{sha}:refs/lab/{sha}"], check=True)
+        sha = push_commit(config, args.commit)
         params = dict(item.split("=", 1) for item in args.param)
         ids = client.submit(args.recipe, sha, params, args.cls, args.for_ref)
         print(" ".join(f"L-{item}" for item in ids), flush=True)
         return wait_for(client, ids) if args.wait else 0
+    if args.command == "lines":
+        return submit_lines(client, config, args)
     if args.command == "push":
         subprocess.run(["git", "push", "--quiet", config["remote"], f"{args.ref}:refs/heads/{args.ref}"], check=True)
         return 0

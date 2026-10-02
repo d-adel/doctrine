@@ -118,5 +118,46 @@ class Queue(unittest.TestCase):
         self.assertEqual(len(self.store.jobs(for_ref="sweep:os=linux:abc")), 1)
 
 
+def entry(for_ref="idle:rule:h1"):
+    return {"recipe": "r", "params": {}, "commit": "a" * 40, "needs": [], "cls": "sweep", "short": False,
+            "for_ref": for_ref}
+
+
+class IdleMarks(unittest.TestCase):
+    def setUp(self):
+        self.store = Store(":memory:")
+
+    def test_a_rule_that_never_ran_has_no_mark(self):
+        self.assertIsNone(self.store.idle_mark("rule"))
+
+    def test_advance_queues_the_entries_and_marks_the_head(self):
+        ids = self.store.advance_idle("rule", None, "h1", [entry(), entry()], now=5.0)
+        self.assertEqual(len(ids), 2)
+        self.assertEqual(self.store.idle_mark("rule"), {"head": "h1", "ran": 5.0})
+        self.assertEqual([job["for_ref"] for job in self.store.jobs()], ["idle:rule:h1"] * 2)
+
+    def test_a_stale_mark_queues_nothing_and_changes_nothing(self):
+        self.store.advance_idle("rule", None, "h1", [entry()], now=5.0)
+        self.assertEqual(self.store.advance_idle("rule", None, "h2", [entry("idle:rule:h2")], now=6.0), [])
+        self.assertEqual(len(self.store.jobs()), 1)
+        self.assertEqual(self.store.idle_mark("rule"), {"head": "h1", "ran": 5.0})
+
+    def test_advancing_without_entries_keeps_the_last_run(self):
+        self.store.advance_idle("rule", None, "h1", [entry()], now=5.0)
+        self.assertEqual(self.store.advance_idle("rule", {"head": "h1", "ran": 5.0}, "h2", [], now=9.0), [])
+        self.assertEqual(self.store.idle_mark("rule"), {"head": "h2", "ran": 5.0})
+
+    def test_a_head_the_rule_already_has_jobs_for_is_not_queued_again(self):
+        queued(self.store, for_ref="idle:rule:h1")
+        self.store.claim("spare", [], now=1.0)
+        self.assertEqual(self.store.advance_idle("rule", None, "h1", [entry()], now=5.0), [])
+        self.assertEqual(len(self.store.jobs()), 1)
+        self.assertEqual(self.store.idle_mark("rule"), {"head": "h1", "ran": 0.0})
+
+    def test_marks_are_per_rule(self):
+        self.store.advance_idle("one", None, "h1", [entry("idle:one:h1")], now=5.0)
+        self.assertEqual(len(self.store.advance_idle("two", None, "h1", [entry("idle:two:h1")], now=6.0)), 1)
+
+
 if __name__ == "__main__":
     unittest.main()
