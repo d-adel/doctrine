@@ -655,6 +655,10 @@ def model_problems(findings, root, model, base=None, head=None, staged=False):
         if added and relative_model not in changed:
             ids = ", ".join(re.match(r"^\+\|\s*([ED]-\d+)", line).group(1) for line in added)
             findings.block("model-stale", f"{ids} entered the ledger without an update to {relative_model}: every result updates the model")
+        for line in added:
+            ident = re.match(r"^\+\|\s*([ED]-\d+)", line).group(1)
+            if ident.startswith("E-") and not re.search(r"\bprior:", line, re.IGNORECASE):
+                findings.block("prior-none", f"{ident} cites no prior rows: search the ledger for its method and question first, then name what it extends ('prior: <ids>' or 'prior: none (searched: <terms>)')")
     if not model["next"]:
         findings.block("plan-empty", "the model's Next is empty: the next action comes from the model before any other work")
     for item in model["next"]:

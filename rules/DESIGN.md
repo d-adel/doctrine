@@ -59,6 +59,10 @@ Rules, each checked by `doctrine_check.py` (Triggers):
 - **Every result updates the model.** A commit that adds an experiment or decision row to the
   ledger changes the model in the same commit: the belief it tested, the cost it measured, the
   route it bounded. A result that changes nothing says so in the model.
+- **Search before measuring.** Before an experiment is built or submitted, the ledger is searched
+  for its method and its question. Its row names what it extends (`prior: <ids>`, or
+  `prior: none (searched: <terms>)`); a model line calling a route unmeasured is checked against
+  the ledger before work rests on it.
 - **Bound before build.** A packet names its Route. A route without a bound at the milestone's
   scale gets its bound measured first, by the cheapest experiment that can produce it; a
   falsified route takes no packet until a reset records a new route.

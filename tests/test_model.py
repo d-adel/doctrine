@@ -160,7 +160,22 @@ class ModelRules(unittest.TestCase):
         self.assertIn("BLOCK model-stale", out)
 
     def test_a_result_staged_with_the_model_passes(self):
+        self.write("doctrine/ledger.md", LEDGER + "| E-2 | another, prior: E-1 | measured | none | layer:solver |\n")
+        self.write("doctrine/model.md", MODEL + "\nE-2 changes nothing.\n")
+        self.git("add", "-A")
+        code, out = self.check("model", "--staged")
+        self.assertEqual(code, 0, out)
+
+    def test_a_result_that_cites_no_prior_rows_is_refused(self):
         self.write("doctrine/ledger.md", LEDGER + "| E-2 | another | measured | none | layer:solver |\n")
+        self.write("doctrine/model.md", MODEL + "\nE-2 changes nothing.\n")
+        self.git("add", "-A")
+        code, out = self.check("model", "--staged")
+        self.assertNotEqual(code, 0)
+        self.assertIn("BLOCK prior-none", out)
+
+    def test_a_result_may_record_a_search_that_found_nothing(self):
+        self.write("doctrine/ledger.md", LEDGER + "| E-2 | another, prior: none (searched: integrator, euler) | measured | none | layer:solver |\n")
         self.write("doctrine/model.md", MODEL + "\nE-2 changes nothing.\n")
         self.git("add", "-A")
         code, out = self.check("model", "--staged")
