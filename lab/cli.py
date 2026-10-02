@@ -63,7 +63,7 @@ def submit_lines(client, config, args):
     ids = []
     for value in values:
         try:
-            ids += client.submit(args.recipe, sha, {args.param: value}, args.cls, args.for_ref)
+            ids += client.submit(args.recipe, sha, {args.param: value}, args.cls, args.for_ref, args.needs)
         except urllib.error.HTTPError as error:
             for item in ids:
                 client.cancel(item)
@@ -89,6 +89,7 @@ def main(argv=None):
         command.add_argument("--commit", default="HEAD")
         command.add_argument("--class", dest="cls", default=cls)
         command.add_argument("--for", dest="for_ref", default="")
+        command.add_argument("--need", dest="needs", action="append", default=[])
         command.add_argument("--wait", action="store_true")
     commands.add_parser("push").add_argument("ref")
     commands.add_parser("status")
@@ -118,7 +119,7 @@ def main(argv=None):
     if args.command == "submit":
         sha = push_commit(config, args.commit)
         params = dict(item.split("=", 1) for item in args.param)
-        ids = client.submit(args.recipe, sha, params, args.cls, args.for_ref)
+        ids = client.submit(args.recipe, sha, params, args.cls, args.for_ref, args.needs)
         print(" ".join(f"L-{item}" for item in ids), flush=True)
         return wait_for(client, ids) if args.wait else 0
     if args.command == "lines":

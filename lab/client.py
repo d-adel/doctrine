@@ -20,8 +20,9 @@ class Client:
                 return json.loads(payload) if payload else None
             return payload
 
-    def submit(self, recipe, commit, params=None, cls="experiment", for_ref=""):
-        body = {"recipe": recipe, "commit": commit, "params": params or {}, "cls": cls, "for": for_ref}
+    def submit(self, recipe, commit, params=None, cls="experiment", for_ref="", needs=None):
+        body = {"recipe": recipe, "commit": commit, "params": params or {}, "cls": cls, "for": for_ref,
+                "needs": list(needs or [])}
         return self.call("POST", "/api/jobs", body)["ids"]
 
     def job(self, job_id):

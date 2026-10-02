@@ -1,5 +1,6 @@
 import fnmatch
 import json
+import re
 import subprocess
 import threading
 import time
@@ -25,6 +26,8 @@ def check_rules(rules):
             raise ValueError(f"an idle rule needs a label, a recipe, a ref and a when of {WHEN}: {rule}")
 
 
+LABEL = re.compile(r"[A-Za-z0-9_.=:-]+")
+
 class Lab:
     def __init__(self, config):
         check_rules(config.get("idle", []))
@@ -47,7 +50,10 @@ class Lab:
         source = f"refs/heads/{ref}" if ref else sha
         return recipes.load(self.git("show", f"{source}:{self.config['recipes_path']}"))
 
-    def entries(self, name, params, sha, cls, for_ref=""):
+    def entries(self, name, params, sha, cls, for_ref="", needs=()):
+        for label in needs:
+            if not LABEL.fullmatch(label):
+                raise ValueError(f"label {label!r} holds a character labels refuse")
         book = self.book_at(sha)
         if name not in book:
             raise ValueError(f"no recipe {name} at {sha[:8]}")
@@ -60,14 +66,14 @@ class Lab:
             child_recipe = book[child["recipe"]]
             recipes.command(child_recipe, child["params"])
             entries.append({"recipe": child["recipe"], "params": child["params"], "commit": sha,
-                            "needs": sorted(set(child_recipe.get("needs", [])) | set(child["needs"])),
+                            "needs": sorted(set(child_recipe.get("needs", [])) | set(child["needs"]) | set(needs)),
                             "cls": cls, "short": child_recipe.get("short", False), "for_ref": for_ref})
         if not entries:
             raise ValueError(f"recipe {name} fans out to no jobs at {sha[:8]}")
         return entries
 
-    def submit(self, name, params, commit, cls, for_ref=""):
-        return self.store.submit_many(self.entries(name, params, self.resolve(commit), cls, for_ref))
+    def submit(self, name, params, commit, cls, for_ref="", needs=()):
+        return self.store.submit_many(self.entries(name, params, self.resolve(commit), cls, for_ref, needs))
 
     @staticmethod
     def rule_name(rule):
@@ -212,7 +218,7 @@ def make_handler(lab):
                 body = json.loads(raw) if raw else {}
                 if parts == ["api", "jobs"]:
                     ids = lab.submit(body["recipe"], body.get("params", {}), body["commit"],
-                                     body.get("cls", "experiment"), body.get("for", ""))
+                                     body.get("cls", "experiment"), body.get("for", ""), body.get("needs", []))
                     return self._send(200, {"ids": ids})
                 if parts == ["api", "wait"]:
                     lab.store.mark_waiting([int(job_id) for job_id in body["ids"]])

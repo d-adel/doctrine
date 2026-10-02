@@ -71,6 +71,18 @@ class Api(unittest.TestCase):
             self.client.submit("say", self.repo.head, {"word": "$(id)"}, "gate")
         self.assertEqual(caught.exception.code, 400)
 
+    def test_a_submitted_need_keeps_the_job_off_other_platforms(self):
+        [job_id] = self.client.submit("say", self.repo.head, {}, "gate", needs=["os=windows"])
+        self.assertEqual(self.client.job(job_id)["needs"], ["os=windows"])
+        claimed = self.client.claim("spare", ["os=linux"])
+        self.assertTrue(claimed is None or claimed["id"] != job_id)
+        self.assertEqual(self.client.claim("desktop", ["os=windows"])["id"], job_id)
+
+    def test_a_need_with_shell_characters_answers_400(self):
+        with self.assertRaises(urllib.error.HTTPError) as caught:
+            self.client.submit("say", self.repo.head, {}, "gate", needs=["os=windows; rm"])
+        self.assertEqual(caught.exception.code, 400)
+
     def test_an_unknown_recipe_answers_400(self):
         with self.assertRaises(urllib.error.HTTPError):
             self.client.submit("nothing", self.repo.head, {}, "gate")
