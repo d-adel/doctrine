@@ -1,7 +1,7 @@
 import json
 import re
 
-VALUE = re.compile(r"^[A-Za-z0-9_.,:/=+@ -]*$")
+VALUE = re.compile(r"[A-Za-z0-9_.,:/=+@ -]*")
 FIELD = re.compile(r"\{([A-Za-z_][A-Za-z0-9_]*)\}")
 
 
@@ -34,7 +34,7 @@ def command(recipe, params):
             raise ValueError(f"unknown parameter {key}")
         filled[key] = str(value)
     for key, value in filled.items():
-        if not VALUE.match(str(value)):
+        if not VALUE.fullmatch(str(value)):
             raise ValueError(f"parameter {key} holds a character recipes refuse")
     missing = [key for key in FIELD.findall(recipe["run"]) if key not in filled]
     if missing:

@@ -4,6 +4,7 @@ import tempfile
 import threading
 import time
 import unittest
+import urllib.error
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -17,7 +18,24 @@ BOOK = {
     "fail": {"run": "echo broken; exit 3"},
     "slow": {"run": "for i in $(seq 1 200); do echo tick $i; sleep 0.1; done"},
     "windows-only": {"needs": ["os=windows"], "run": "echo windows"},
+    "brief": {"run": "for i in 1 2 3 4 5 6 7 8 9 10; do echo tick $i; sleep 0.1; done"},
+    "leaves": {"run": "(sleep 30 &); echo left"},
 }
+
+
+class Flaky:
+    def __init__(self, client, failures):
+        self.client = client
+        self.failures = failures
+
+    def heartbeat(self, job_id, worker):
+        if self.failures > 0:
+            self.failures -= 1
+            raise urllib.error.URLError("coordinator unreachable")
+        return self.client.heartbeat(job_id, worker)
+
+    def __getattr__(self, name):
+        return getattr(self.client, name)
 
 
 def worker_for(coordinator, repo, name, labels, **extra):
@@ -97,6 +115,37 @@ class Runs(unittest.TestCase):
         self.assertEqual(job["state"], "done")
         self.assertEqual(job["worker"], "spare")
         self.assertEqual(job["attempts"], 2)
+
+    def test_a_lost_job_is_requeued_without_any_claim(self):
+        [job_id] = self.client.submit("hello", self.repo.head, {}, "gate")
+        self.client.claim("ghost", ["os=linux"])
+        time.sleep(2.5)
+        self.assertEqual(self.client.job(job_id)["state"], "queued")
+
+    def test_a_transient_heartbeat_error_does_not_end_the_job(self):
+        [job_id] = self.client.submit("brief", self.repo.head, {}, "gate")
+        worker = self.worker("spare", ["os=linux"])
+        worker.client = Flaky(self.client, failures=1)
+        self.assertTrue(worker.run_once())
+        self.assertEqual(self.client.job(job_id)["state"], "done")
+
+    def test_a_worker_cut_off_from_the_coordinator_kills_its_command(self):
+        [job_id] = self.client.submit("slow", self.repo.head, {}, "gate")
+        worker = self.worker("spare", ["os=linux"], lost_after=1)
+        worker.client = Flaky(self.client, failures=10 ** 6)
+        began = time.time()
+        worker.run_once()
+        self.assertLess(time.time() - began, 10)
+        log = (worker.logs / str(job_id) / "log.txt").read_text()
+        self.assertNotIn("tick 200", log)
+
+    def test_a_leftover_child_holding_the_output_does_not_hold_the_worker(self):
+        [job_id] = self.client.submit("leaves", self.repo.head, {}, "gate")
+        worker = self.worker("spare", ["os=linux"], drain_wait=0.5)
+        began = time.time()
+        self.assertTrue(worker.run_once())
+        self.assertLess(time.time() - began, 8)
+        self.assertEqual(self.client.job(job_id)["state"], "done")
 
     def test_quiet_labels_drop_under_load(self):
         worker = self.worker("desktop", ["os=windows", "reference"], quiet_labels=["reference"], quiet_cpu=-1)

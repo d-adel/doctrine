@@ -17,7 +17,8 @@ class Job:
 def rank(job, aging_step=AGING_STEP):
     base = CLASSES.index(job.cls)
     boost = 1 if job.waiting and job.short else 0
-    return min(base + boost + job.overtaken // aging_step, len(CLASSES) - 1)
+    aged = max(base, min(base + job.overtaken // aging_step, len(CLASSES) - 2))
+    return min(aged + boost, len(CLASSES) - 1)
 
 
 def eligible(job, labels):

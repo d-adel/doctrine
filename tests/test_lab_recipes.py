@@ -59,6 +59,10 @@ class Recipes(unittest.TestCase):
             with self.assertRaises(ValueError):
                 recipes.command(self.book["check-line"], {"name": value})
 
+    def test_command_refuses_a_trailing_newline(self):
+        with self.assertRaises(ValueError):
+            recipes.command(self.book["check-line"], {"name": "a" + chr(10)})
+
     def test_command_refuses_an_undeclared_parameter(self):
         with self.assertRaises(ValueError):
             recipes.command(self.book["pile"], {"seed": "1"})

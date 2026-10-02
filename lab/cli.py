@@ -32,6 +32,9 @@ def describe(job):
 
 
 def wait_for(client, ids, poll=5):
+    if not ids:
+        print("no jobs to wait for", flush=True)
+        return 1
     client.wait_mark(ids)
     while True:
         jobs = [client.job(item) for item in ids]
@@ -107,7 +110,12 @@ def main(argv=None):
             sys.stdout.write(data.decode(errors="replace"))
             sys.stdout.flush()
             offset += len(data)
-            if not args.follow or client.job(job_id(args.id))["state"] in FINISHED:
+            if not args.follow:
+                return 0
+            if client.job(job_id(args.id))["state"] in FINISHED:
+                rest = client.log(job_id(args.id), offset)
+                sys.stdout.write(rest.decode(errors="replace"))
+                sys.stdout.flush()
                 return 0
             time.sleep(2)
     if args.command == "cancel":

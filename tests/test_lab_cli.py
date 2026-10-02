@@ -67,6 +67,9 @@ class CommandLine(unittest.TestCase):
         self.assertIn("done", out)
         self.assertTrue(self.lab.client.job(int(job_id[2:]))["waiting"])
 
+    def test_waiting_on_no_jobs_fails(self):
+        self.assertEqual(cli.wait_for(self.lab.client, []), 1)
+
     def test_status_lists_the_queue(self):
         self.run_cli("submit", "hello", "--class", "milestone")
         code, out = self.run_cli("status")

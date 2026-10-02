@@ -76,6 +76,24 @@ class Store:
             self._db.commit()
             return cursor.lastrowid
 
+    def submit_many(self, entries, now=None):
+        if any(entry["cls"] not in policy.CLASSES for entry in entries):
+            raise ValueError("unknown class")
+        moment = _moment(now)
+        with self._lock:
+            ids = []
+            for entry in entries:
+                cursor = self._db.execute(
+                    "INSERT INTO jobs (recipe, params, commit_sha, needs, cls, short, for_ref, submitted)"
+                    " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    (entry["recipe"], json.dumps(entry["params"], sort_keys=True), entry["commit"],
+                     json.dumps(sorted(entry["needs"])), entry["cls"], int(bool(entry["short"])),
+                     entry.get("for_ref", ""), moment),
+                )
+                ids.append(cursor.lastrowid)
+            self._db.commit()
+            return ids
+
     def get(self, job_id):
         with self._lock:
             return _job(self._db.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone())

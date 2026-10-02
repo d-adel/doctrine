@@ -102,5 +102,27 @@ class Api(unittest.TestCase):
         self.assertIn("gate", page)
 
 
+class Fanouts(unittest.TestCase):
+    def submit_over(self, blocking):
+        files = recipe_file(BOOK)
+        files["doctrine/blocking.md"] = blocking
+        self.repo = Repo(files)
+        self.lab = Coordinator(self.repo)
+        try:
+            with self.assertRaises(urllib.error.HTTPError):
+                self.lab.client.submit("sweep-linux", self.repo.head, {}, "sweep")
+            return self.lab.client.jobs()
+        finally:
+            self.lab.close()
+            self.repo.close()
+
+    def test_a_fanout_with_no_lines_is_refused(self):
+        self.assertEqual(self.submit_over("nothing here" + chr(10)), [])
+
+    def test_a_fanout_with_one_bad_line_queues_nothing(self):
+        lines = ["- one :: true", "- it's bad :: true", "- two :: true", ""]
+        self.assertEqual(self.submit_over(chr(10).join(lines)), [])
+
+
 if __name__ == "__main__":
     unittest.main()

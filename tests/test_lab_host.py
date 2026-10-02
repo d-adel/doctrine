@@ -22,9 +22,13 @@ class Probes(unittest.TestCase):
         self.assertIsNone(host.parse_nvidia(""))
 
     def test_descendants_walk_the_tree_once(self):
-        pairs = [(2, 1), (3, 2), (4, 2), (5, 9), (1, 0), (6, 6)]
+        pairs = [(2, 1, 0), (3, 2, 0), (4, 2, 0), (5, 9, 0), (1, 0, 0), (6, 6, 0)]
         self.assertEqual(sorted(host.descendants(pairs, 2)), [2, 3, 4])
         self.assertEqual(host.descendants(pairs, 6), [6])
+
+    def test_descendants_skip_a_child_older_than_its_parent(self):
+        processes = [(10, 1, 100), (11, 10, 150), (20, 10, 50), (21, 20, 60)]
+        self.assertEqual(sorted(host.descendants(processes, 10)), [10, 11])
 
     def test_cpu_load_is_a_percentage(self):
         load = host.cpu_load(0.2)

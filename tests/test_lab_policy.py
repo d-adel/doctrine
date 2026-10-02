@@ -5,7 +5,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from lab import policy
-from lab.policy import Job
+from lab.policy import Job, pick, rank
 
 
 class Pick(unittest.TestCase):
@@ -35,9 +35,6 @@ class Pick(unittest.TestCase):
         self.assertEqual(policy.rank(Job(1, "background", overtaken=10)), 1)
         self.assertEqual(policy.rank(Job(1, "background", overtaken=20)), 2)
 
-    def test_aging_stops_at_gate(self):
-        self.assertEqual(policy.rank(Job(1, "background", overtaken=1000)), len(policy.CLASSES) - 1)
-
     def test_labels_must_cover_the_needs(self):
         queue = [Job(1, "gate", needs=frozenset({"os=windows"})), Job(2, "sweep")]
         self.assertEqual(policy.pick(queue, {"os=linux"}).id, 2)
@@ -48,6 +45,12 @@ class Pick(unittest.TestCase):
     def test_passed_over_counts_only_older_eligible_jobs(self):
         queue = [Job(1, "sweep"), Job(2, "sweep", needs=frozenset({"gpu"})), Job(3, "gate"), Job(4, "sweep")]
         self.assertEqual(policy.passed_over(queue, {"os=linux"}, queue[2]), [1])
+
+    def test_aging_stops_below_gate(self):
+        aged = Job(1, "background", overtaken=1000)
+        gate = Job(2, "gate")
+        self.assertEqual(rank(aged), rank(Job(3, "milestone")))
+        self.assertEqual(pick([aged, gate], set()).id, 2)
 
 
 if __name__ == "__main__":

@@ -1,5 +1,7 @@
 import json
 import subprocess
+import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -35,14 +37,16 @@ class Lab:
         if "fanout" not in recipe:
             recipes.command(recipe, params)
             return [self.store.submit(name, params, sha, recipe.get("needs", []), cls, recipe.get("short", False), for_ref)]
-        ids = []
+        entries = []
         for child in recipes.fanout(recipe, self.git("show", f"{sha}:{recipe['fanout']['file']}")):
             child_recipe = book[child["recipe"]]
             recipes.command(child_recipe, child["params"])
-            needs = sorted(set(child_recipe.get("needs", [])) | set(child["needs"]))
-            ids.append(self.store.submit(child["recipe"], child["params"], sha, needs, cls,
-                                         child_recipe.get("short", False), for_ref))
-        return ids
+            entries.append({"recipe": child["recipe"], "params": child["params"], "commit": sha,
+                            "needs": sorted(set(child_recipe.get("needs", [])) | set(child["needs"])),
+                            "cls": cls, "short": child_recipe.get("short", False), "for_ref": for_ref})
+        if not entries:
+            raise ValueError(f"recipe {name} fans out to no jobs at {sha[:8]}")
+        return self.store.submit_many(entries)
 
     def idle(self, worker, labels):
         idle = self.config.get("idle")
@@ -123,6 +127,12 @@ def make_handler(lab):
             allowed, parts, query = self._route()
             if not allowed:
                 return self._send(401, {"error": "token"})
+            try:
+                return self._get(parts, query)
+            except (ValueError, KeyError) as error:
+                return self._send(400, {"error": str(error)})
+
+        def _get(self, parts, query):
             if not parts:
                 return self._send(200, dashboard.render(lab, _arg(query, "token") or "").encode(), "text/html; charset=utf-8")
             if parts == ["api", "jobs"]:
@@ -181,8 +191,16 @@ def make_handler(lab):
     return Handler
 
 
+def reap(lab, every):
+    while True:
+        time.sleep(every)
+        lab.store.requeue_lost(lab.config.get("lost_after", 90))
+
+
 def serve(config):
     lab = Lab(config)
     httpd = ThreadingHTTPServer((config.get("bind", "0.0.0.0"), int(config.get("port", 8765))), make_handler(lab))
     httpd.lab = lab
+    every = max(config.get("lost_after", 90) / 3, 0.1)
+    threading.Thread(target=reap, args=(lab, every), daemon=True).start()
     return httpd

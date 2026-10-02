@@ -117,10 +117,11 @@ def owner_present(idle_after):
     return seconds_since_input() < idle_after or fullscreen_app()
 
 
-def descendants(pairs, root):
+def descendants(processes, root):
+    created = {pid: moment for pid, _, moment in processes}
     children = {}
-    for pid, parent in pairs:
-        if pid != parent:
+    for pid, parent, moment in processes:
+        if pid != parent and moment >= created.get(parent, 0):
             children.setdefault(parent, []).append(pid)
     found, stack = [], [root]
     while stack:
@@ -132,25 +133,37 @@ def descendants(pairs, root):
     return found
 
 
-def _process_pairs():
+def _created(kernel32, pid):
+    handle = kernel32.OpenProcess(0x1000, False, pid)
+    if not handle:
+        return 0
+    creation, exited, kernel, user = (ctypes.c_ulonglong() for _ in range(4))
+    ok = kernel32.GetProcessTimes(ctypes.c_void_p(handle), ctypes.byref(creation), ctypes.byref(exited),
+                                  ctypes.byref(kernel), ctypes.byref(user))
+    kernel32.CloseHandle(ctypes.c_void_p(handle))
+    return creation.value if ok else 0
+
+
+def _processes():
     kernel32 = ctypes.windll.kernel32
     kernel32.CreateToolhelp32Snapshot.restype = ctypes.c_void_p
+    kernel32.OpenProcess.restype = ctypes.c_void_p
     snapshot = ctypes.c_void_p(kernel32.CreateToolhelp32Snapshot(2, 0))
     entry = _ProcessEntry()
     entry.dwSize = ctypes.sizeof(_ProcessEntry)
-    pairs = []
+    found = []
     more = kernel32.Process32FirstW(snapshot, ctypes.byref(entry))
     while more:
-        pairs.append((entry.th32ProcessID, entry.th32ParentProcessID))
+        found.append((entry.th32ProcessID, entry.th32ParentProcessID, _created(kernel32, entry.th32ProcessID)))
         more = kernel32.Process32NextW(snapshot, ctypes.byref(entry))
     kernel32.CloseHandle(snapshot)
-    return pairs
+    return found
 
 
 def _each_windows_process(root, call):
     kernel32 = ctypes.windll.kernel32
     kernel32.OpenProcess.restype = ctypes.c_void_p
-    for pid in descendants(_process_pairs(), root):
+    for pid in descendants(_processes(), root):
         handle = kernel32.OpenProcess(0x0800, False, pid)
         if handle:
             call(ctypes.c_void_p(handle))
