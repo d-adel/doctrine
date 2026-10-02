@@ -152,6 +152,14 @@ class Store:
             rows = self._db.execute(f"SELECT * FROM jobs{where} ORDER BY id DESC LIMIT ?", (*values, limit)).fetchall()
         return [_job(row) for row in rows]
 
+    def done(self, recipe, limit=20):
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT * FROM jobs WHERE state = 'done' AND recipe = ? ORDER BY finished DESC, id DESC LIMIT ?",
+                (recipe, limit),
+            ).fetchall()
+        return [_job(row) for row in rows]
+
     def claim(self, worker, labels, now=None):
         moment = _moment(now)
         with self._lock:
