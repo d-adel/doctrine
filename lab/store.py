@@ -33,7 +33,8 @@ CREATE TABLE IF NOT EXISTS workers (
     name TEXT PRIMARY KEY,
     labels TEXT NOT NULL,
     seen REAL NOT NULL,
-    paused INTEGER NOT NULL DEFAULT 0
+    paused INTEGER NOT NULL DEFAULT 0,
+    held INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS idle_marks (
     rule TEXT PRIMARY KEY,
@@ -71,6 +72,9 @@ class Store:
         self._lock = threading.Lock()
         with self._lock:
             self._db.executescript(SCHEMA)
+            columns = {row["name"] for row in self._db.execute("PRAGMA table_info(workers)")}
+            if "held" not in columns:
+                self._db.execute("ALTER TABLE workers ADD COLUMN held INTEGER NOT NULL DEFAULT 0")
             self._db.commit()
 
     def submit(self, recipe, params, commit, needs, cls, short, for_ref="", now=None):
@@ -191,10 +195,13 @@ class Store:
 
     def heartbeat(self, job_id, worker, now=None):
         with self._lock:
+            moment = _moment(now)
             cursor = self._db.execute(
                 "UPDATE jobs SET heartbeat = ? WHERE id = ? AND worker = ? AND state = 'running'",
-                (_moment(now), job_id, worker),
+                (moment, job_id, worker),
             )
+            if cursor.rowcount == 1:
+                self._db.execute("UPDATE workers SET seen = ?, held = 0 WHERE name = ?", (moment, worker))
             self._db.commit()
             return cursor.rowcount == 1
 
@@ -242,16 +249,16 @@ class Store:
             self._db.commit()
         return changed
 
-    def _touch(self, name, labels, moment):
+    def _touch(self, name, labels, moment, held=False):
         self._db.execute(
-            "INSERT INTO workers (name, labels, seen) VALUES (?, ?, ?)"
-            " ON CONFLICT(name) DO UPDATE SET labels = excluded.labels, seen = excluded.seen",
-            (name, json.dumps(sorted(labels)), moment),
+            "INSERT INTO workers (name, labels, seen, held) VALUES (?, ?, ?, ?)"
+            " ON CONFLICT(name) DO UPDATE SET labels = excluded.labels, seen = excluded.seen, held = excluded.held",
+            (name, json.dumps(sorted(labels)), moment, int(bool(held))),
         )
 
-    def touch_worker(self, name, labels, now=None):
+    def touch_worker(self, name, labels, now=None, held=False):
         with self._lock:
-            self._touch(name, labels, _moment(now))
+            self._touch(name, labels, _moment(now), held)
             self._db.commit()
 
     def _is_paused(self, name):
@@ -274,4 +281,5 @@ class Store:
     def workers(self):
         with self._lock:
             rows = self._db.execute("SELECT * FROM workers ORDER BY name").fetchall()
-        return [dict(row, labels=json.loads(row["labels"]), paused=bool(row["paused"])) for row in rows]
+        return [dict(row, labels=json.loads(row["labels"]), paused=bool(row["paused"]), held=bool(row["held"]))
+                for row in rows]

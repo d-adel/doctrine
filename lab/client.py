@@ -38,8 +38,11 @@ class Client:
     def wait_mark(self, ids):
         self.call("POST", "/api/wait", {"ids": list(ids)})
 
-    def claim(self, worker, labels):
-        return self.call("POST", "/api/claim", {"worker": worker, "labels": sorted(labels)})["job"]
+    def claim(self, worker, labels, held=False):
+        body = {"worker": worker, "labels": sorted(labels)}
+        if held:
+            body["held"] = True
+        return self.call("POST", "/api/claim", body)["job"]
 
     def heartbeat(self, job_id, worker):
         return self.call("POST", f"/api/jobs/{job_id}/heartbeat", {"worker": worker})["ok"]

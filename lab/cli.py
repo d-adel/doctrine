@@ -130,6 +130,7 @@ def main(argv=None):
     if args.command == "status":
         for worker in client.workers():
             state = "paused" if worker["paused"] else f"seen {int(time.time() - worker['seen'])} s ago"
+            state += ", held by its owner" if worker.get("held") else ""
             print(f"{worker['name']} [{' '.join(worker['labels'])}] {state}")
         for job in client.jobs(state="running") + client.jobs(state="queued"):
             print(describe(job))

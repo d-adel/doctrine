@@ -112,6 +112,19 @@ class Queue(unittest.TestCase):
         self.assertEqual(worker["labels"], ["gpu", "os=linux"])
         self.assertEqual(worker["seen"], 7.0)
 
+    def test_a_heartbeat_keeps_its_worker_seen(self):
+        job_id = queued(self.store)
+        self.store.claim("spare", [], now=1.0)
+        self.store.heartbeat(job_id, "spare", now=500.0)
+        self.assertEqual(self.store.workers()[0]["seen"], 500.0)
+
+    def test_a_worker_held_by_its_owner_is_seen_and_marked_held(self):
+        self.store.touch_worker("desktop", ["os=windows"], now=9.0, held=True)
+        worker = self.store.workers()[0]
+        self.assertEqual((worker["seen"], worker["held"]), (9.0, True))
+        self.store.claim("desktop", ["os=windows"], now=10.0)
+        self.assertFalse(self.store.workers()[0]["held"])
+
     def test_jobs_filter_by_for_ref(self):
         queued(self.store, for_ref="sweep:os=linux:abc")
         queued(self.store)

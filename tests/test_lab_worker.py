@@ -160,6 +160,13 @@ class Runs(unittest.TestCase):
         self.assertFalse(worker.run_once())
         self.assertEqual(self.client.job(job_id)["state"], "queued")
 
+    def test_an_owner_held_worker_reports_itself_held(self):
+        worker = self.worker("desktop", ["os=linux"], owner=True)
+        worker.presence = host.Presence(3, 300, lambda: 0.0, lambda: True, lambda: 0.0)
+        self.assertFalse(worker.run_once())
+        [seen] = [row for row in self.client.workers() if row["name"] == "desktop"]
+        self.assertTrue(seen["held"])
+
     def test_presence_reads_its_minutes_and_window_from_the_config(self):
         worker = self.worker("desktop", ["os=linux"], owner=True, presence_minutes=2, presence_window=120)
         self.assertEqual((worker.presence.minutes, worker.presence.window), (2, 120))

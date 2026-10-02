@@ -60,6 +60,7 @@ class Worker:
 
     def run_once(self):
         if self.owner_present():
+            self.client.claim(self.name, self.labels, held=True)
             return False
         job = self.client.claim(self.name, self.labels_now())
         if not job:

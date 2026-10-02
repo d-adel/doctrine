@@ -115,7 +115,10 @@ class Lab:
                 continue
         return False
 
-    def claim(self, worker, labels):
+    def claim(self, worker, labels, held=False):
+        if held:
+            self.store.touch_worker(worker, labels, held=True)
+            return None
         self.store.requeue_lost(self.config.get("lost_after", 90))
         job = self.store.claim(worker, labels)
         if job is None and self.idle(worker, labels):
@@ -224,7 +227,8 @@ def make_handler(lab):
                     lab.store.mark_waiting([int(job_id) for job_id in body["ids"]])
                     return self._send(200, {"ok": True})
                 if parts == ["api", "claim"]:
-                    return self._send(200, {"job": lab.claim(body["worker"], body.get("labels", []))})
+                    return self._send(200, {"job": lab.claim(body["worker"], body.get("labels", []),
+                                                             bool(body.get("held")))})
                 if len(parts) == 4 and parts[:2] == ["api", "jobs"]:
                     job_id = int(parts[2])
                     if parts[3] == "heartbeat":

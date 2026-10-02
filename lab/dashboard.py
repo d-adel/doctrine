@@ -68,7 +68,7 @@ def plan_banner(store, running, now):
     for worker in store.workers():
         job = running.get(worker["name"])
         seen = max(worker["seen"], job["heartbeat"] or 0) if job else worker["seen"]
-        if now - seen > SEEN:
+        if now - seen > SEEN or worker.get("held"):
             continue
         if job and job["cls"] != "sweep":
             return ""
@@ -100,7 +100,8 @@ def render(lab, token):
         button = (f"<form method='post' action='/api/workers/{escape(worker['name'])}/pause"
                   f"?token={escape(token)}&paused={0 if worker['paused'] else 1}'><button>{verb}</button></form>"
                   if token and getattr(lab, "token", token) == token else "")
-        workers.append([escape(worker["name"]), escape(" ".join(worker["labels"])), _ago(worker["seen"]),
+        workers.append([escape(worker["name"]), escape(" ".join(worker["labels"])),
+                        _ago(worker["seen"]) + (" (owner present)" if worker.get("held") else ""),
                         f"L-{job['id']} {escape(job['recipe'])} ({escape(job['cls'])})" if job else "", button])
     queue = sorted(store.jobs(state="queued", limit=500), key=lambda job: (-_rank(job), job["id"]))
     queued_rows = [[f"L-{job['id']}", escape(job["cls"]), escape(job["recipe"]), escape(str(job["params"])),
