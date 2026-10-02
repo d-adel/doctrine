@@ -138,6 +138,12 @@ materially incorrect measurement. Remaining uncertainty alone is not a reason.
 Across questions, related failures in one lineage force a layer audit
 (Triggers). The budget never shortens a packet's own checks.
 
+**Integrated-first discovery.** Once a milestone's pieces run end to end,
+discovery happens on one integration branch, measured on the milestone's own
+workload; diagnostic switches are allowed there, off by default. Packets
+package accepted work at merge time, one packet per merge unit, not one per
+discovery step.
+
 **Routing.** At a decision boundary (before choosing consequential next work, after a result, and
 before declaring a question or task complete; not before every read, command or edit) the
 coordinator runs `scripts/doctrine_check.py route`. It separates two things: the permitted next
@@ -164,6 +170,24 @@ a baseline, a threshold, an authorization condition or a termination rule is nev
 however small the diff. The profile's Routing lines set the never-fast paths, the consequential
 terms and both budgets; `Routing: off` turns routing off and leaves everything else, the judgment
 layer included, as it was.
+
+**Scoreboard heartbeat.** After every 5 ledger rows of kind result, probe or repair, and after every
+decision row, the coordinator records a `kind=heartbeat` row: the milestone's numbers now; which
+moved since the last heartbeat (`moved=<terms>` or `moved=none`); the blocker to the next
+measurement; and whether the current line is still expected to move the milestone. Two consecutive
+heartbeats with `moved=none` force a route review, a reset or an independent decision (`kind=reset`,
+or `kind=decision; review=route`), before further local repairs. A review restarts that count, so
+the heartbeat that follows it does not fire it again. Rows are ordered by the commit that first
+added them, not by their place in the ledger; rows written with a heartbeat in one commit count
+before it. A ledger with no heartbeat yet counts only rows first committed after 2026-10-02 21:30
+UTC, when this rule began (`HEARTBEAT_FROM` in the script), so no earlier ledger is blocked
+retroactively. `triggers` and `route` enforce both (Triggers).
+
+**Representativeness.** Before the second `kind=repair` row in a lineage (`lineage=decision:<slug>`),
+a `kind=representativeness` row for that lineage shows, by a named measurement, that the fixture
+exercises the same geometry, data, contacts or state transitions and code paths as the milestone or
+production case. The canonical miss: a fixture whose bodies lacked data production bodies carry, so
+a code path the repairs depended on never ran. `route --action repair` enforces it (Triggers).
 
 **Decision-quality evidence.** An experiment needs the precision the next
 decision needs, not perfect knowledge. Once the competing explanations or
@@ -278,8 +302,8 @@ an action, provided it is recorded.
 | `/doctrine:milestone` (a milestone set or changed) | `milestone` | no Id or Regime; an unvalidated milestone oracle; no regime map; a park overlapping the regime |
 | `/doctrine:accept` | `accept <task>` | no lineage; a criterion without an oracle, or a reference not validated in the milestone's regimes; a relative comparison without `shares=` and `covered-by=`; an exclusion without `floor=`; a repair without its invariant criterion; a stale citation; an audit due in the packet's lineage; no Readers section, or a reader of a changed name outside Scope and not declared unaffected; for a packet moving the milestone, every milestone block; a reset due on a `decision:` key it names; with a Model in the profile, no Route, a Route not in the model, a falsified route, a route without a bound, or no `Predicts:` naming a Goal term |
 | Every commit (the project's guard) | `model --staged` | a ledger result without a model update; an empty Next; a Next item naming no term it moves |
-| `/doctrine:prepare`, `/doctrine:run`, `/doctrine:decide` | `triggers [--task]` | an audit due in the lineage they touch; a reset due on a `decision:` key the packet names |
-| A decision boundary (Progression, Routing) | `route --action <mechanical, probe, repair, investigate, complete>` | an audit due in the decision's or packet's lineage; a spent probe budget; a question already answered; a reset due; a route applied after its state changed |
+| `/doctrine:prepare`, `/doctrine:run`, `/doctrine:decide` | `triggers [--task]` | an audit due in the lineage they touch; a reset due on a `decision:` key the packet names; a heartbeat due; a route review due |
+| A decision boundary (Progression, Routing) | `route --action <mechanical, probe, repair, investigate, complete>` | an audit due in the decision's or packet's lineage; a spent probe budget; a question already answered; a reset due; a route applied after its state changed; a heartbeat due; a route review due; a repair in a lineage that already has one and no representativeness row |
 | `/doctrine:merge`, after the gate | `merge --apply` | nothing: it marks stale every row resting on a changed path, and every row resting on those |
 | The checker, on every log | the profile's invariant markers | a violation line is a failed check |
 
@@ -373,6 +397,11 @@ observation; bound or status; consequence; next decision, if any; and the Tags
 column the triggers read (`templates/ledger.md`). Histories, traces and
 abandoned investigations live in separate records. No agent should need the
 full history to find the next action.
+
+**Batched records.** During an active investigation, findings accumulate as
+notes; the ledger, model and decision updates are written at checkpoints (a
+heartbeat, a decision, a merge) in one commit. The evidence each row carries is
+unchanged.
 
 Process overhead: the rough share of work spent on the product, experiments,
 doctrine and bookkeeping is tracked at reprioritization. When process

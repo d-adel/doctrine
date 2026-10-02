@@ -25,8 +25,10 @@ a few lines with the options and the evidence.
    - A Decision in a lineage due for an audit is the audit's Decision (`/doctrine:audit`), or it
      waits.
    - `python "${CLAUDE_PLUGIN_ROOT}/scripts/doctrine_check.py" route --action investigate --decision <slug>`
-     must print no `BLOCK`: a question already answered ends, and a reset due goes to
-     `/doctrine:reset` or the configured independent decision first.
+     must print no `BLOCK`: a question already answered ends, a reset due goes to
+     `/doctrine:reset` or the configured independent decision first, and a heartbeat due is
+     recorded first. A `route-review` `BLOCK` does not stop the Decision that is that route
+     review; its ledger line is `kind=decision; review=route`.
 3. **Commit** the brief.
 4. **Decide** where the profile's Delegated decisions say. Locally: spawn `doctrine:critic` in
    decision mode with the brief's path, the commit and the plugin root, and nothing else. In a

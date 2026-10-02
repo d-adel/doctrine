@@ -15,7 +15,7 @@ Tags are `key=value` pairs separated by `;`, with comma-separated values:
 
 | Key | Values | Read by |
 |---|---|---|
-| `kind` | defect, result, decision, reference, audit; and probe, repair, reset for a decision's lineage | every trigger; overrides the prefix |
+| `kind` | defect, result, decision, reference, audit; probe, repair, reset and representativeness for a decision's lineage; heartbeat | every trigger; overrides the prefix |
 | `state` | open, parked, resolved, closed, superseded, done | lineage counts, park checks |
 | `lineage` | `layer:<name>`, `regime:<name>`, `invariant:<name>`, `criterion:<task>/<id>`, `decision:<slug>` | the lineage audit trigger; routing counts a decision's probes and repairs by its `decision:` key |
 | `severity` | foundational: the finding invalidates a foundational assumption or reference | an immediate audit of its lineages |
@@ -28,6 +28,8 @@ Tags are `key=value` pairs separated by `;`, with comma-separated values:
 | `covers` | for an audit: the rows and `task:<name>` supersessions it explains | clears them from lineage counts |
 | `outcome` | for a probe: decisive, inconclusive; for a repair: fixed, failed, informative (failed, but with new discriminating evidence) | routing's probe and repair budgets |
 | `changed` | for a reset: hypothesis, strategy, scope or rationale, what the reset changed | a reset with none clears nothing |
+| `moved` | for a heartbeat: the Goal terms that moved since the last heartbeat, or none; a heartbeat without it counts as none | the route-review trigger |
+| `review` | for a decision: route, when it is the route review two heartbeats without movement force | clears the route-review trigger |
 | `judged-by`, `confidence` | `fast` with its confidence, or `reasoning`: who set a judged tag (`rules/judgments.md`) | calibration at reprioritization |
 
 A stale row is re-verified by re-running or re-reading what it rests on. Its `stale=` tag is then

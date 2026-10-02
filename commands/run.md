@@ -21,8 +21,9 @@ the profile's Limits before launching.
   on that branch still Accepted with no Evidence): then reuse the worktree and go on from step 4.
 - A guard the profile requires is not installed.
 - `python "${CLAUDE_PLUGIN_ROOT}/scripts/doctrine_check.py" triggers --task <task>` prints a `BLOCK`: an audit came due in the packet's lineage
-  after it was accepted, or a reset came due on a `decision:` key it names. Run the audit or the
-  reset first; the packet waits.
+  after it was accepted, a reset came due on a `decision:` key it names, or a heartbeat or a route
+  review is due (`DESIGN.md`, Progression). Run the audit, the reset or the review, or record the
+  heartbeat, first; the packet waits.
 - A failed check or a review finding sends the next action through `route` (`DESIGN.md`,
   Progression, Routing); an amendment on the fast route still gets the packet's gate before merge.
 

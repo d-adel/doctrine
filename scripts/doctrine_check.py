@@ -24,6 +24,8 @@ TAG_KEYS = {
     "confidence",
     "outcome",
     "changed",
+    "moved",
+    "review",
 }
 DEFAULT_KINDS = {"C": "defect", "E": "result", "D": "decision", "A": "audit", "O": "reference"}
 DONE_STATES = {"done", "closed", "resolved", "repaired", "superseded", "falsified"}
@@ -32,6 +34,9 @@ ANY_ID = re.compile(r"\b([A-Z]{1,3}-\d+)\b")
 LINEAGE_KEY = re.compile(r"^(layer|regime|invariant|criterion|decision):[\w./+-]+$")
 REOPEN = re.compile(r"\bReopen (?:if|when|with|on|above|at)\b(?:[^|;.]|\.(?=\d))*")
 OBSERVES = re.compile(r"\bObserves: ((?:[^|;.]|\.(?=\d))*)")
+HEARTBEAT_FROM = datetime.datetime(2026, 10, 2, 21, 30, tzinfo=datetime.timezone.utc)
+HEARTBEAT_EVERY = 5
+HEARTBEAT_COUNTED = ("result", "probe", "repair")
 CITED_SECTIONS = ("Moves", "Serves", "Accepted Design", "Repairs", "Criteria", "Checks")
 ORACLE_KIND = re.compile(r"(^|\s)(spec|exact:|analytic:|invariant:|reference:|relative|regression)")
 
@@ -679,6 +684,99 @@ def command_model(root, args):
     return findings.emit()
 
 
+def row_commits(root, ctx):
+    rows = ctx["rows"]
+    try:
+        relative = ctx["ledger_path"].resolve().relative_to(Path(root).resolve()).as_posix()
+    except ValueError:
+        relative = None
+    first, order, stamp = {}, 0, None
+    if relative is not None:
+        result = subprocess.run(
+            ["git", "-C", str(root), "log", "-m", "--reverse", "--topo-order", "-U0", "--no-color", "--no-ext-diff",
+             "--format=ledger-commit %at", "--", relative],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+        )
+        if result.returncode == 0:
+            for line in result.stdout.splitlines():
+                if line.startswith("ledger-commit "):
+                    order += 1
+                    stamp = int(line.split()[1])
+                elif line.startswith("+|"):
+                    match = ROW_ID.match(line[1:])
+                    if match:
+                        first.setdefault(match.group(1), (order, stamp))
+    pending = (order + 1, None)
+    return {row_id: first.get(row_id, pending) for row_id in rows}
+
+
+def moved_none(row):
+    return set(row.values("moved")) <= {"none"}
+
+
+def check_heartbeat(findings, root, ctx):
+    rows, kinds = ctx["rows"], ctx["kinds"]
+    if not rows:
+        return
+    added = row_commits(root, ctx)
+    ordered = sorted(rows.values(), key=lambda row: (added[row.id][0], row.index))
+    kind = {row.id: kind_of(row, kinds) for row in ordered}
+    beats = [row for row in ordered if kind[row.id] == "heartbeat"]
+    if beats:
+        since = added[beats[-1].id][0]
+        fresh = [row for row in ordered if added[row.id][0] > since]
+        anchor = f"the last heartbeat {beats[-1].id}"
+    else:
+        cutoff = HEARTBEAT_FROM.timestamp()
+        fresh = [row for row in ordered if added[row.id][1] is None or added[row.id][1] > cutoff]
+        anchor = f"{HEARTBEAT_FROM:%Y-%m-%dT%H:%MZ}, when heartbeats began"
+    counted = [row.id for row in fresh if kind[row.id] in HEARTBEAT_COUNTED]
+    decided = [row.id for row in fresh if kind[row.id] == "decision"]
+    if len(counted) >= HEARTBEAT_EVERY or decided:
+        reasons = []
+        if len(counted) >= HEARTBEAT_EVERY:
+            reasons.append(f"{len(counted)} result, probe or repair rows ({', '.join(counted)})")
+        if decided:
+            reasons.append(f"decision rows {', '.join(decided)}")
+        findings.block(
+            "heartbeat-due",
+            f"{' and '.join(reasons)} since {anchor}; record kind=heartbeat; moved=<terms>|none with the milestone's "
+            "numbers now, what moved since the last heartbeat, the blocker to the next measurement, and whether the "
+            "current line is still expected to move the milestone",
+        )
+    if len(beats) < 2:
+        return
+    earlier, latest = beats[-2], beats[-1]
+    for row in (earlier, latest):
+        if not row.values("moved"):
+            findings.warn("heartbeat-moved", f"heartbeat {row.id} has no moved=, so it counts as moved=none")
+    if not (moved_none(earlier) and moved_none(latest)):
+        return
+    reviewed = [
+        row.id for row in ordered
+        if added[row.id][0] > added[earlier.id][0]
+        and (kind[row.id] == "reset" or (kind[row.id] == "decision" and "route" in row.values("review")))
+    ]
+    if not reviewed:
+        findings.block(
+            "route-review",
+            f"heartbeats {earlier.id} and {latest.id} both record moved=none; review the route with a reset or an "
+            "independent decision before further local repairs, recorded kind=reset or kind=decision; review=route",
+        )
+
+
+def check_representativeness(findings, ctx, decision):
+    lineage = decision_rows(ctx, decision)
+    repairs = [row.id for row in lineage if kind_of(row, ctx["kinds"]) == "repair"]
+    if repairs and not any(kind_of(row, ctx["kinds"]) == "representativeness" for row in lineage):
+        findings.block(
+            "representativeness-missing",
+            f"{decision} already has repair rows {', '.join(repairs)}; before another, record "
+            f"kind=representativeness; lineage={decision} showing by a named measurement that the fixture exercises "
+            "the geometry, data, contacts or state transitions and code paths of the milestone or production case",
+        )
+
+
 def command_triggers(root, args):
     ctx = context(root)
     findings = Findings()
@@ -698,6 +796,7 @@ def command_triggers(root, args):
             if row:
                 scope.update(row.values("lineage"))
     report_due(findings, due, scope)
+    check_heartbeat(findings, root, ctx)
     settings = routing_settings(root)
     if scope and not settings["off"]:
         check_decisions(findings, ctx, settings, scope)
@@ -1100,6 +1199,7 @@ def evaluate_route(root, ctx, settings, decision, action, task, cause, base, hea
                 scope.update(row.values("lineage"))
     if ctx["lines"] is not None:
         report_due(findings, audits_due(lineage_events(rows, ctx["tasks"], ctx["kinds"]), ctx["threshold"]), scope)
+        check_heartbeat(findings, root, ctx)
     budget = decision_budget(ctx, decision) if decision else None
     if budget and budget["unchanged"]:
         findings.warn("reset-unchanged", f"{decision}: {', '.join(budget['unchanged'])} records a reset with no changed=, so it clears nothing")
@@ -1155,6 +1255,8 @@ def evaluate_route(root, ctx, settings, decision, action, task, cause, base, hea
     elif action == "complete":
         route = "doctrine" if obligations else "fast"
         why.append("the branch may end; completing an investigation accepts nothing" if obligations else "nothing named remains open")
+    if action == "repair" and decision:
+        check_representativeness(findings, ctx, decision)
     if any(level == "BLOCK" for level, code, _ in findings.items if code not in ("answered",)) and ROUTE_ORDER[route] < ROUTE_ORDER["doctrine"]:
         route = "doctrine"
         why.append("a hard escalation holds")

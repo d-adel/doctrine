@@ -69,8 +69,10 @@ project sets (concurrency, build kit, pitfalls) are in its
   established and is told where they are; evidence ends with a carry-forward
   note. A fact already recorded with its source is cited, not looked up again.
 - **Commit as you go.** Work is committed on its branch as it lands; a result
-  that exists only in a working tree or a session is not a result. The ledger
-  or campaign file changes in the same commit as the result it records.
+  that exists only in a working tree or a session is not a result. During an
+  active investigation findings are committed as notes, and the ledger, model
+  and campaign file change at the next checkpoint in one commit (`DESIGN.md`,
+  Records).
 - **Timings.** Timings under load are provisional; a number for a verdict is
   measured quiet and back to back, in the build the profile names.
 - **Independent decisions.** Where the campaign's Authority delegates a
