@@ -21,7 +21,7 @@ class Repo:
         self.root = Path(tempfile.mkdtemp(prefix="labrepo-"))
         self.path = self.root / "repo.git"
         self.work = self.root / "work"
-        git("init", "--quiet", "--bare", str(self.path))
+        git("init", "--quiet", "--bare", "-b", "main", str(self.path))
         git("--git-dir", str(self.path), "config", "uploadpack.allowReachableSHA1InWant", "true")
         git("init", "--quiet", "-b", "main", str(self.work))
         git("config", "user.email", "lab@example.invalid", cwd=self.work)
