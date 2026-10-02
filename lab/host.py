@@ -215,10 +215,85 @@ def _each_windows_process(root, call):
     kernel32 = ctypes.windll.kernel32
     kernel32.OpenProcess.restype = ctypes.c_void_p
     for pid in descendants(_processes(), root):
-        handle = kernel32.OpenProcess(0x0800, False, pid)
-        if handle:
-            call(ctypes.c_void_p(handle))
-            kernel32.CloseHandle(ctypes.c_void_p(handle))
+        _call_on_pid(kernel32, pid, call)
+
+
+def _call_on_pid(kernel32, pid, call):
+    handle = kernel32.OpenProcess(0x0800, False, pid)
+    if handle:
+        call(ctypes.c_void_p(handle))
+        kernel32.CloseHandle(ctypes.c_void_p(handle))
+
+
+class _BasicLimits(ctypes.Structure):
+    _fields_ = [("PerProcessUserTimeLimit", ctypes.c_longlong), ("PerJobUserTimeLimit", ctypes.c_longlong),
+                ("LimitFlags", ctypes.c_uint), ("MinimumWorkingSetSize", ctypes.c_size_t),
+                ("MaximumWorkingSetSize", ctypes.c_size_t), ("ActiveProcessLimit", ctypes.c_uint),
+                ("Affinity", ctypes.c_size_t), ("PriorityClass", ctypes.c_uint), ("SchedulingClass", ctypes.c_uint)]
+
+
+class _ExtendedLimits(ctypes.Structure):
+    _fields_ = [("BasicLimitInformation", _BasicLimits), ("IoInfo", ctypes.c_ulonglong * 6),
+                ("ProcessMemoryLimit", ctypes.c_size_t), ("JobMemoryLimit", ctypes.c_size_t),
+                ("PeakProcessMemoryUsed", ctypes.c_size_t), ("PeakJobMemoryUsed", ctypes.c_size_t)]
+
+
+JOB_LIMIT_KILL_ON_CLOSE = 0x2000
+JOB_EXTENDED_LIMITS = 9
+JOB_PROCESS_ID_LIST = 3
+JOB_PID_CAPACITY = 4096
+
+
+class _ProcessIdList(ctypes.Structure):
+    _fields_ = [("NumberOfAssignedProcesses", ctypes.c_uint), ("NumberOfProcessIdsInList", ctypes.c_uint),
+                ("ProcessIdList", ctypes.c_size_t * JOB_PID_CAPACITY)]
+
+
+def _job_kernel32():
+    kernel32 = ctypes.windll.kernel32
+    kernel32.CreateJobObjectW.restype = ctypes.c_void_p
+    kernel32.CreateJobObjectW.argtypes = [ctypes.c_void_p, ctypes.c_wchar_p]
+    kernel32.SetInformationJobObject.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_void_p, ctypes.c_uint]
+    kernel32.AssignProcessToJobObject.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+    kernel32.TerminateJobObject.argtypes = [ctypes.c_void_p, ctypes.c_uint]
+    kernel32.QueryInformationJobObject.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_void_p, ctypes.c_uint,
+                                                   ctypes.c_void_p]
+    kernel32.CloseHandle.argtypes = [ctypes.c_void_p]
+    return kernel32
+
+
+def _job_for(process):
+    kernel32 = _job_kernel32()
+    job = kernel32.CreateJobObjectW(None, None)
+    if not job:
+        return None
+    limits = _ExtendedLimits()
+    limits.BasicLimitInformation.LimitFlags = JOB_LIMIT_KILL_ON_CLOSE
+    if (kernel32.SetInformationJobObject(job, JOB_EXTENDED_LIMITS, ctypes.byref(limits), ctypes.sizeof(limits))
+            and kernel32.AssignProcessToJobObject(job, int(process._handle))):
+        return job
+    kernel32.CloseHandle(job)
+    return None
+
+
+def _job_pids(job):
+    listing = _ProcessIdList()
+    if not _job_kernel32().QueryInformationJobObject(job, JOB_PROCESS_ID_LIST, ctypes.byref(listing),
+                                                     ctypes.sizeof(listing), None):
+        return None
+    return list(listing.ProcessIdList[:listing.NumberOfProcessIdsInList])
+
+
+def _each_windows_job_process(process, call):
+    job = getattr(process, "job", None)
+    pids = _job_pids(job) if job else None
+    if pids is None:
+        _each_windows_process(process.pid, call)
+        return
+    kernel32 = ctypes.windll.kernel32
+    kernel32.OpenProcess.restype = ctypes.c_void_p
+    for pid in pids:
+        _call_on_pid(kernel32, pid, call)
 
 
 NO_WINDOW = 0x08000000
@@ -235,28 +310,33 @@ def hidden_run(args, **kwargs):
 
 def start(args, cwd, env):
     if WINDOWS:
-        return subprocess.Popen(args, cwd=cwd, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                creationflags=NEW_GROUP | NO_WINDOW)
+        process = subprocess.Popen(args, cwd=cwd, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                   creationflags=NEW_GROUP | NO_WINDOW)
+        process.job = _job_for(process)
+        return process
     return subprocess.Popen(args, cwd=cwd, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                             start_new_session=True)
 
 
 def suspend(process):
     if WINDOWS:
-        _each_windows_process(process.pid, ctypes.windll.ntdll.NtSuspendProcess)
+        _each_windows_job_process(process, ctypes.windll.ntdll.NtSuspendProcess)
     else:
         os.killpg(os.getpgid(process.pid), signal.SIGSTOP)
 
 
 def resume(process):
     if WINDOWS:
-        _each_windows_process(process.pid, ctypes.windll.ntdll.NtResumeProcess)
+        _each_windows_job_process(process, ctypes.windll.ntdll.NtResumeProcess)
     else:
         os.killpg(os.getpgid(process.pid), signal.SIGCONT)
 
 
 def kill(process):
     if WINDOWS:
+        job = getattr(process, "job", None)
+        if job:
+            _job_kernel32().TerminateJobObject(job, 1)
         hidden_run(["taskkill", "/T", "/F", "/PID", str(process.pid)], capture_output=True)
     else:
         os.killpg(os.getpgid(process.pid), signal.SIGKILL)

@@ -1,3 +1,4 @@
+import ctypes
 import sys
 import time
 import unittest
@@ -33,7 +34,9 @@ class Probes(unittest.TestCase):
     def test_windows_subprocesses_open_no_window(self):
         seen = []
         real_popen, real_run, real_windows = host.subprocess.Popen, host.subprocess.run, host.WINDOWS
-        host.subprocess.Popen = lambda *args, **kwargs: seen.append(kwargs)
+        real_job = host._job_for
+        host.subprocess.Popen = lambda *args, **kwargs: seen.append(kwargs) or type("Fake", (), {})()
+        host._job_for = lambda process: None
         host.subprocess.run = lambda *args, **kwargs: seen.append(kwargs)
         try:
             host.WINDOWS = True
@@ -41,6 +44,7 @@ class Probes(unittest.TestCase):
             host.hidden_run(["git", "status"])
         finally:
             host.subprocess.Popen, host.subprocess.run, host.WINDOWS = real_popen, real_run, real_windows
+            host._job_for = real_job
         self.assertEqual(len(seen), 2)
         for kwargs in seen:
             self.assertTrue(kwargs.get("creationflags", 0) & 0x08000000)
@@ -63,6 +67,28 @@ class Probes(unittest.TestCase):
         host.kill(process)
         process.wait(timeout=10)
         self.assertIsNotNone(process.poll())
+
+    @unittest.skipUnless(sys.platform == "win32", "job objects are Windows only")
+    def test_kill_reaches_a_grandchild_whose_parent_already_exited(self):
+        middle = ("import subprocess,sys;"
+                  "print(subprocess.Popen([sys.executable,'-c','import time;time.sleep(60)'],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL).pid)")
+        root = ("import subprocess,sys,time;"
+                f"print(subprocess.run([sys.executable,'-c',{middle!r}],capture_output=True,text=True).stdout.strip(),flush=True);"
+                "time.sleep(60)")
+        process = host.start([sys.executable, "-c", root], None, None)
+        grandchild = int(process.stdout.readline())
+        kernel32 = ctypes.windll.kernel32
+        kernel32.OpenProcess.restype = ctypes.c_void_p
+        handle = kernel32.OpenProcess(0x1000 | 0x00100000, False, grandchild)
+        self.assertTrue(handle)
+        try:
+            self.assertEqual(kernel32.WaitForSingleObject(ctypes.c_void_p(handle), 0), 0x102)
+            host.kill(process)
+            process.wait(timeout=10)
+            self.assertEqual(kernel32.WaitForSingleObject(ctypes.c_void_p(handle), 5000), 0)
+        finally:
+            kernel32.TerminateProcess(ctypes.c_void_p(handle), 1)
+            kernel32.CloseHandle(ctypes.c_void_p(handle))
 
 
 class Desk:
