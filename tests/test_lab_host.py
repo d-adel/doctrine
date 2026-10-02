@@ -70,6 +70,7 @@ class Desk:
         self.now = 0.0
         self.last = -10.0 ** 6
         self.full = False
+        self.where = (0, 0)
 
     def clock(self):
         return self.now
@@ -80,16 +81,22 @@ class Desk:
     def fullscreen(self):
         return self.full
 
-    def presence(self, minutes=3, window=300):
-        return host.Presence(minutes, window, self.since_input, self.fullscreen, self.clock)
+    def cursor(self):
+        return self.where
 
-    def sample(self, presence, start, stop, every=10.0, typing=False):
+    def presence(self, minutes=3, window=300, cursor=False):
+        return host.Presence(minutes, window, self.since_input, self.fullscreen, self.clock,
+                             self.cursor if cursor else None)
+
+    def sample(self, presence, start, stop, every=10.0, typing=False, moving=False):
         seen = []
         moment = start
         while moment < stop:
             self.now = moment
             if typing:
                 self.last = moment
+            if moving:
+                self.where = (self.where[0] + 1, self.where[1])
             seen.append(presence.present())
             moment += every
         return seen
@@ -129,6 +136,23 @@ class Presence(unittest.TestCase):
         desk = Desk()
         desk.full = True
         self.assertTrue(desk.presence().present())
+
+    def test_with_the_cursor_rule_input_that_leaves_the_cursor_still_is_not_presence(self):
+        desk = Desk()
+        presence = desk.presence(cursor=True)
+        self.assertNotIn(True, desk.sample(presence, 0.0, 600.0, typing=True))
+
+    def test_with_the_cursor_rule_input_that_moves_the_cursor_is_presence(self):
+        desk = Desk()
+        presence = desk.presence(cursor=True)
+        seen = desk.sample(presence, 0.0, 600.0, typing=True, moving=True)
+        self.assertFalse(seen[0])
+        self.assertTrue(seen[-1])
+
+    def test_with_the_cursor_rule_a_fullscreen_app_is_presence(self):
+        desk = Desk()
+        desk.full = True
+        self.assertTrue(desk.presence(cursor=True).present())
 
     def test_the_window_and_the_minutes_come_from_the_arguments(self):
         desk = Desk()

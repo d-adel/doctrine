@@ -67,6 +67,10 @@ class _Rect(ctypes.Structure):
     _fields_ = [("left", ctypes.c_long), ("top", ctypes.c_long), ("right", ctypes.c_long), ("bottom", ctypes.c_long)]
 
 
+class _Point(ctypes.Structure):
+    _fields_ = [("x", ctypes.c_long), ("y", ctypes.c_long)]
+
+
 class _MonitorInfo(ctypes.Structure):
     _fields_ = [("cbSize", ctypes.c_uint), ("rcMonitor", _Rect), ("rcWork", _Rect), ("dwFlags", ctypes.c_uint)]
 
@@ -85,6 +89,13 @@ def seconds_since_input():
     info = _LastInput(ctypes.sizeof(_LastInput), 0)
     ctypes.windll.user32.GetLastInputInfo(ctypes.byref(info))
     return ((ctypes.windll.kernel32.GetTickCount() - info.dwTime) & 0xFFFFFFFF) / 1000.0
+
+
+def cursor_position():
+    point = _Point()
+    if not ctypes.windll.user32.GetCursorPos(ctypes.byref(point)):
+        return None
+    return point.x, point.y
 
 
 def fullscreen_app():
@@ -120,18 +131,28 @@ def _no_fullscreen():
 
 
 class Presence:
-    def __init__(self, minutes=3, window=300, since_input=None, fullscreen=None, clock=time.time):
+    def __init__(self, minutes=3, window=300, since_input=None, fullscreen=None, clock=time.time, cursor=None):
         self.minutes = minutes
         self.window = window
         self.since_input = since_input or (seconds_since_input if WINDOWS else _no_input)
         self.fullscreen = fullscreen or (fullscreen_app if WINDOWS else _no_fullscreen)
         self.clock = clock
+        self.cursor = cursor
+        self.where = None
         self.inputs = {}
+
+    def moved(self):
+        if self.cursor is None:
+            return True
+        where = self.cursor()
+        moved = where is not None and self.where is not None and where != self.where
+        self.where = where
+        return moved
 
     def sample(self):
         now = self.clock()
         since = self.since_input()
-        if since is not None:
+        if since is not None and self.moved():
             moment = now - since
             minute = int(moment // 60)
             self.inputs[minute] = max(moment, self.inputs.get(minute, moment))
