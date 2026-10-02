@@ -10,6 +10,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from labfixture import Coordinator, Repo, recipe_file
+from lab import host
 from lab.worker import Worker
 
 BOOK = {
@@ -146,6 +147,33 @@ class Runs(unittest.TestCase):
         self.assertTrue(worker.run_once())
         self.assertLess(time.time() - began, 8)
         self.assertEqual(self.client.job(job_id)["state"], "done")
+
+    def test_an_owner_active_in_three_minutes_holds_the_worker(self):
+        [job_id] = self.client.submit("hello", self.repo.head, {}, "gate")
+        worker = self.worker("desktop", ["os=linux"], owner=True)
+        now = [0.0]
+        worker.presence = host.Presence(3, 300, lambda: 0.0, lambda: False, lambda: now[0])
+        for moment in (0.0, 60.0):
+            now[0] = moment
+            self.assertFalse(worker.owner_present())
+        now[0] = 120.0
+        self.assertFalse(worker.run_once())
+        self.assertEqual(self.client.job(job_id)["state"], "queued")
+
+    def test_presence_reads_its_minutes_and_window_from_the_config(self):
+        worker = self.worker("desktop", ["os=linux"], owner=True, presence_minutes=2, presence_window=120)
+        self.assertEqual((worker.presence.minutes, worker.presence.window), (2, 120))
+        default = self.worker("laptop", ["os=linux"], owner=True)
+        self.assertEqual((default.presence.minutes, default.presence.window), (3, 300))
+
+    def test_a_worker_with_no_owner_never_samples_input(self):
+        worker = self.worker("spare", ["os=linux"])
+
+        def refuse():
+            raise AssertionError("sampled")
+
+        worker.presence = host.Presence(1, 300, refuse, refuse, refuse)
+        self.assertFalse(worker.owner_present())
 
     def test_quiet_labels_drop_under_load(self):
         worker = self.worker("desktop", ["os=windows", "reference"], quiet_labels=["reference"], quiet_cpu=-1)

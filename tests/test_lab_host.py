@@ -37,7 +37,7 @@ class Probes(unittest.TestCase):
 
     def test_owner_is_never_present_off_windows(self):
         if not host.WINDOWS:
-            self.assertFalse(host.owner_present(600))
+            self.assertFalse(host.Presence().present())
 
     def test_suspend_resume_and_kill_a_process_tree(self):
         process = host.start(["bash", "-c", "for i in 1 2 3 4 5 6 7 8 9 10; do echo $i; sleep 0.2; done"], None, None)
@@ -48,6 +48,78 @@ class Probes(unittest.TestCase):
         host.kill(process)
         process.wait(timeout=10)
         self.assertIsNotNone(process.poll())
+
+
+class Desk:
+    def __init__(self):
+        self.now = 0.0
+        self.last = -10.0 ** 6
+        self.full = False
+
+    def clock(self):
+        return self.now
+
+    def since_input(self):
+        return self.now - self.last
+
+    def fullscreen(self):
+        return self.full
+
+    def presence(self, minutes=3, window=300):
+        return host.Presence(minutes, window, self.since_input, self.fullscreen, self.clock)
+
+    def sample(self, presence, start, stop, every=10.0, typing=False):
+        seen = []
+        moment = start
+        while moment < stop:
+            self.now = moment
+            if typing:
+                self.last = moment
+            seen.append(presence.present())
+            moment += every
+        return seen
+
+
+class Presence(unittest.TestCase):
+    def test_a_stray_input_every_three_minutes_is_not_presence(self):
+        desk = Desk()
+        presence = desk.presence()
+        seen = []
+        for event in range(0, 3600, 180):
+            desk.last = float(event)
+            seen += desk.sample(presence, float(event), float(event + 180))
+        self.assertNotIn(True, seen)
+
+    def test_input_in_three_distinct_minutes_is_presence(self):
+        desk = Desk()
+        presence = desk.presence()
+        self.assertEqual(desk.sample(presence, 1200.0, 1320.0, typing=True), [False] * 12)
+        self.assertTrue(desk.sample(presence, 1320.0, 1321.0, typing=True)[0])
+
+    def test_input_within_one_minute_counts_once(self):
+        desk = Desk()
+        presence = desk.presence(minutes=2)
+        self.assertNotIn(True, desk.sample(presence, 600.0, 660.0, every=1.0, typing=True))
+
+    def test_presence_ends_once_its_minutes_leave_the_window(self):
+        desk = Desk()
+        presence = desk.presence()
+        desk.sample(presence, 0.0, 600.0, typing=True)
+        quiet = desk.sample(presence, 600.0, 1200.0)
+        self.assertTrue(quiet[0])
+        self.assertEqual(quiet.index(False), 18)
+        self.assertNotIn(True, quiet[18:])
+
+    def test_a_fullscreen_app_is_presence_without_input(self):
+        desk = Desk()
+        desk.full = True
+        self.assertTrue(desk.presence().present())
+
+    def test_the_window_and_the_minutes_come_from_the_arguments(self):
+        desk = Desk()
+        presence = desk.presence(minutes=2, window=90)
+        self.assertTrue(desk.sample(presence, 0.0, 70.0, typing=True)[-1])
+        self.assertFalse(desk.sample(presence, 160.0, 161.0)[0])
 
 
 if __name__ == "__main__":

@@ -111,10 +111,37 @@ def fullscreen_app():
             and rect.right >= screen.right and rect.bottom >= screen.bottom)
 
 
-def owner_present(idle_after):
-    if not WINDOWS:
-        return False
-    return seconds_since_input() < idle_after or fullscreen_app()
+def _no_input():
+    return None
+
+
+def _no_fullscreen():
+    return False
+
+
+class Presence:
+    def __init__(self, minutes=3, window=300, since_input=None, fullscreen=None, clock=time.time):
+        self.minutes = minutes
+        self.window = window
+        self.since_input = since_input or (seconds_since_input if WINDOWS else _no_input)
+        self.fullscreen = fullscreen or (fullscreen_app if WINDOWS else _no_fullscreen)
+        self.clock = clock
+        self.inputs = {}
+
+    def sample(self):
+        now = self.clock()
+        since = self.since_input()
+        if since is not None:
+            moment = now - since
+            minute = int(moment // 60)
+            self.inputs[minute] = max(moment, self.inputs.get(minute, moment))
+        horizon = now - self.window
+        self.inputs = {minute: moment for minute, moment in self.inputs.items() if moment >= horizon}
+        return len(self.inputs)
+
+    def present(self):
+        active = self.sample()
+        return bool(self.fullscreen()) or active >= self.minutes
 
 
 def descendants(processes, root):

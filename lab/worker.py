@@ -24,7 +24,7 @@ class Worker:
         self.bash = config.get("bash", "bash")
         self.env_file = config.get("env_file", "")
         self.owner = config.get("owner", False)
-        self.idle_after = config.get("idle_after", 600)
+        self.presence = host.Presence(config.get("presence_minutes", 3), config.get("presence_window", 300))
         self.quiet_labels = set(config.get("quiet_labels", ["quiet", "reference"]))
         self.quiet_cpu = config.get("quiet_cpu", 15)
         self.quiet_gpu = config.get("quiet_gpu", 10)
@@ -35,7 +35,7 @@ class Worker:
         self.drain_wait = config.get("drain_wait", 10)
 
     def owner_present(self):
-        return bool(self.owner) and host.owner_present(self.idle_after)
+        return bool(self.owner) and self.presence.present()
 
     def labels_now(self):
         labels = set(self.labels)
