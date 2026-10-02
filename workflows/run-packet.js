@@ -139,7 +139,10 @@ function check(dir, summary, label, ph) {
     'as a pass. Then run every other Check the packet lists, as the packet writes it, each with its own log. ' +
     'A Check that needs a quiet machine (a timing, a cost or a budget) is reported as not run with the reason ' +
     '"quiet window"; the coordinator runs it. A Check you cannot run as written is reported as not run with ' +
-    'what it needs. For each failure, list the files it names and whether any is in the packet\'s Scope. ' +
+    'what it needs. When the profile names a re-run rule for a line (a test that fails alone under load is ' +
+    're-run quiet and alone), apply it and report that line once, with the re-run\'s result and both logs in ' +
+    'its detail; a line the profile gives no such rule keeps its first result. ' +
+    'For each failure, list the files it names and whether any is in the packet\'s Scope. ' +
     'Then search every log you wrote for each violation line the profile\'s Invariant monitors section names; ' +
     'each match is a failed Check named "invariant: <name>", with the matching lines as its detail.\n' +
     `4. Write \`git -C ${wt} diff ${base}..HEAD\` to ${dir}/diff.patch and return that path.\n\n` +
