@@ -18,7 +18,9 @@ recommendations or favoured precedent from the campaign's record.
 ## Measurements
 
 <raw measurements with their ids, build and machine state; stage by stage where a cost is
-concerned>
+concerned. Include every recorded measurement of a method a perspective could plausibly propose,
+falsified or not (a route the record already measured is a fact, not a precedent): a sheet that
+omits one lets the panel re-propose it and the decision re-run it>
 
 ## Precedent
 
